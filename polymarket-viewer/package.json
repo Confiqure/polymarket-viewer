@@ -1,7 +1,18 @@
 {
   "name": "polymarket-viewer",
+  "author": "Dylan Wheeler",
+  "description": "TV-friendly delayed probability & candlestick viewer for Polymarket markets.",
+  "homepage": "https://polymarket-viewer.dylanwheeler.net",
+  "license": "MIT",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Confiqure/polymarket-viewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Confiqure/polymarket-viewer/issues"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
