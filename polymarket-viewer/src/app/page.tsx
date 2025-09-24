@@ -26,7 +26,7 @@ function useCandles(series: TimeSeries, backfill: PricePoint[], nowTs: number, d
   }, [series, backfill, nowTs, delayMs, intervalMs]);
 }
 
-function BigPercent({ series, nowTs, delayMs, label }: { series: TimeSeries; nowTs: number; delayMs: number; label?: string }) {
+function BigPercent({ series, nowTs, delayMs, label, tvMode }: { series: TimeSeries; nowTs: number; delayMs: number; label?: string; tvMode?: boolean }) {
   const displayTs = nowTs - delayMs;
   const pt = lerpAt(series, displayTs);
   if (!pt) {
@@ -40,23 +40,25 @@ function BigPercent({ series, nowTs, delayMs, label }: { series: TimeSeries; now
     })();
     return (
       <div className="text-center my-6">
-        <div className="text-7xl font-extrabold tracking-tight">
+        <div className={`font-extrabold tracking-tight ${tvMode ? "text-[clamp(3rem,10vw,10rem)]" : "text-7xl"}`}>
           {secs != null ? `${secs}s` : "…"}
         </div>
-        <div className="text-sm text-neutral-400">{secs != null ? "Spoiler protection: data available soon" : "Waiting for market data"}</div>
+        <div className={`${tvMode ? "text-xl sm:text-2xl" : "text-sm sm:text-base"} text-neutral-400`}>
+          {label ? `${label} to win • ` : ""}{secs != null ? "data available soon" : "waiting for market data"}
+        </div>
       </div>
     );
   }
   const pct = (pt.p * 100).toFixed(1);
   return (
     <div className="text-center my-6">
-      <div className="text-7xl font-extrabold tracking-tight">{pct}%</div>
-      <div className="text-sm text-neutral-400">Probability ({label ?? "YES"})</div>
+      <div className={`font-extrabold tracking-tight ${tvMode ? "text-[clamp(3rem,10vw,10rem)]" : "text-7xl"}`}>{pct}%</div>
+      <div className={`${tvMode ? "text-2xl sm:text-3xl" : "text-base sm:text-lg"} text-neutral-300`}>{label ?? "Outcome"} to win</div>
     </div>
   );
 }
 
-function Chart({ candles }: { candles: ReturnType<typeof buildCandles> }) {
+function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCandles>; height?: number }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<{ chart: ReturnType<typeof createChart>; series: ISeriesApi<"Candlestick"> } | null>(null);
   useEffect(() => {
@@ -64,7 +66,7 @@ function Chart({ candles }: { candles: ReturnType<typeof buildCandles> }) {
     (async () => {
       if (!ref.current) return;
       const opts = {
-        height: 320,
+        height,
         layout: { textColor: "#cbd5e1", background: { color: "transparent" } },
         rightPriceScale: { borderVisible: false },
         timeScale: { borderVisible: false },
@@ -84,7 +86,7 @@ function Chart({ candles }: { candles: ReturnType<typeof buildCandles> }) {
       dispose = () => chart.remove();
     })();
     return () => dispose?.();
-  }, []);
+  }, [height]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -100,7 +102,7 @@ function Chart({ candles }: { candles: ReturnType<typeof buildCandles> }) {
     chart.timeScale().fitContent();
   }, [candles]);
 
-  return <div ref={ref} className="w-full h-[320px] rounded-lg border border-neutral-800" />;
+  return <div ref={ref} className="w-full rounded-lg border border-neutral-800" style={{ height }} />;
 }
 
 export default function Home() {
@@ -122,6 +124,7 @@ export default function Home() {
   const [tf, setTf] = useState<TF>(5);
   const [pov, setPov] = useState<"YES" | "NO">("YES");
   const delayMs = delaySec * 1000;
+  const [tvMode, setTvMode] = useState(false);
 
   const { seriesYes, seriesNo, tob } = useMarketWS(market?.yesTokenId, market?.noTokenId);
   const [backfill, setBackfill] = useState<PricePoint[]>([]);
@@ -190,6 +193,10 @@ export default function Home() {
     if (povStr === "YES" || povStr === "NO") {
       setPov((prev) => (prev !== povStr ? (povStr as "YES" | "NO") : prev));
     }
+
+    const mode = (qs.get("mode") ?? "").toLowerCase();
+    const tv = mode === "tv" || mode === "1" || mode === "true";
+    setTvMode((prev) => (prev !== tv ? tv : prev));
   }, [mounted, currentQS]);
 
   // Push state to URL params (without reload)
@@ -201,6 +208,7 @@ export default function Home() {
     params.set("delay", String(delaySec));
     params.set("tf", String(tf));
     params.set("pov", pov.toLowerCase());
+    if (tvMode) params.set("mode", "tv"); else params.delete("mode");
     const next = params.toString();
     const current = currentQS;
     if (next !== current) {
@@ -211,7 +219,7 @@ export default function Home() {
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [mounted, marketUrl, delaySec, tf, pov, pathname, router, currentQS]);
+  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, pathname, router, currentQS]);
 
   // Autoload market if URL contains one
   const autoLoadedRef = useRef(false);
@@ -285,9 +293,23 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-black text-slate-200">
-      <div className="mx-auto max-w-4xl px-4 py-6">
-        <h1 className="text-2xl font-semibold">Polymarket Viewer</h1>
-        <div className="mt-4 flex items-center gap-2">
+      <div className={`mx-auto ${tvMode ? "max-w-6xl" : "max-w-4xl"} px-4 py-6`}>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className={`font-semibold ${tvMode && market ? "text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2" : "text-xl sm:text-2xl"}`}>
+            {tvMode && market ? (market.question || "") : "Polymarket Viewer"}
+          </h1>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={tvMode}
+              onChange={(e) => setTvMode(e.target.checked)}
+              className="h-4 w-4 accent-neutral-500"
+            />
+            TV mode
+          </label>
+        </div>
+        {!tvMode && (
+        <div className="mt-4 flex items-center gap-3">
           <input
             className="flex-1 rounded-md bg-neutral-900 px-3 py-2 outline-none ring-1 ring-neutral-800 focus:ring-indigo-500"
             placeholder="Paste Polymarket URL (event or market)"
@@ -301,52 +323,49 @@ export default function Home() {
             </span>
           )}
         </div>
+        )}
         {error && (
           <div className="mt-3 rounded-md bg-red-950 text-red-200 px-3 py-2 border border-red-800">{error}</div>
         )}
         {market && (
           <div className="mt-4">
-            <div className="text-lg text-slate-300">{market.question}</div>
+            {!tvMode && (
+              <div className="text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2">{market.question}</div>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <div className="text-xs rounded-full bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800">
+              <div className="text-sm sm:text-base rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-slate-300">
                 {delaySec === 0 ? "Live" : `Delayed by ${Math.floor(delaySec / 60)}:${String(delaySec % 60).padStart(2, "0")}`}
               </div>
-              {(() => {
-                const tokenId = pov === "YES" ? market?.yesTokenId : market?.noTokenId;
-                if (!tokenId) return null;
-                const t = tob[tokenId];
-                if (t?.bestBid == null || t?.bestAsk == null) return null;
-                return (
-                  <div className="text-xs rounded-full bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800">
-                    Spread: {Math.round((t.bestAsk! - t.bestBid!) * 100)}¢
-                  </div>
-                );
-              })()}
+              {!tvMode && (
               <div className="flex items-center gap-2 text-sm">
                 <span>Outcome</span>
                 <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800 bg-neutral-900">
                   <button
                     type="button"
-                    className={`px-3 py-1 text-xs ${pov === "YES" ? "bg-indigo-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
+                    className={`px-4 py-2 text-sm font-semibold ${pov === "YES" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
                     onClick={() => setPov("YES")}
                   >
                     {market.yesLabel ?? "YES"}
                   </button>
                   <button
                     type="button"
-                    className={`px-3 py-1 text-xs ${pov === "NO" ? "bg-indigo-600 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
+                    className={`px-4 py-2 text-sm font-semibold ${pov === "NO" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
                     onClick={() => setPov("NO")}
                   >
                     {market.noLabel ?? "NO"}
                   </button>
                 </div>
               </div>
+              )}
+              {!tvMode && (
               <label className="flex items-center gap-2 text-sm">
                 Delay
                 <input type="range" min={0} max={600} value={delaySec} onChange={(e) => setDelaySec(Number(e.target.value))} />
                 <input type="number" min={0} max={600} className="w-20 rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800" value={delaySec} onChange={(e) => setDelaySec(Number(e.target.value))} />
                 s
               </label>
+              )}
+              {!tvMode && (
               <label className="flex items-center gap-2 text-sm">
                 Timeframe
                 <select
@@ -362,17 +381,13 @@ export default function Home() {
                   ))}
                 </select>
               </label>
+              )}
             </div>
 
-            <BigPercent
-              series={activeSeries}
-              nowTs={nowTs}
-              delayMs={delayMs}
-              label={pov === "YES" ? market.yesLabel : market.noLabel}
-            />
+            <BigPercent series={activeSeries} nowTs={nowTs} delayMs={delayMs} label={pov === "YES" ? market.yesLabel : market.noLabel} tvMode={tvMode} />
 
             <div className="mt-4">
-              <Chart candles={candles} />
+              <Chart candles={candles} height={tvMode ? 480 : 360} />
             </div>
           </div>
         )}
