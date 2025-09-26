@@ -1,34 +1,50 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createChart, CrosshairMode, type ISeriesApi, type CandlestickData, type UTCTimestamp } from "lightweight-charts";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createChart, CrosshairMode, CandlestickSeries, type ISeriesApi, type CandlestickData, type UTCTimestamp, type IChartApi } from "lightweight-charts";
 import axios from "axios";
 import { z } from "zod";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { MarketRef, PricePoint } from "@/lib/types";
 import { buildCandles } from "@/lib/candles";
-import { lerpAt, TimeSeries } from "@/lib/buffer";
+import { TimeSeries } from "@/lib/buffer";
 import { useMarketWS } from "@/lib/useMarketWS";
 import type { Candle as CandleType } from "@/lib/types";
+
+// Minimal types for the Wake Lock API to avoid strict any
+type WakeLockSentinelLike = {
+  release: () => Promise<void>;
+  addEventListener?: (type: "release", listener: () => void) => void;
+};
+type NavigatorWithWakeLock = Navigator & {
+  wakeLock?: { request: (type: "screen") => Promise<unknown> };
+};
 
 const HistorySchema = z
   .object({ history: z.array(z.object({ t: z.number(), p: z.number() })) })
   .or(z.array(z.object({ t: z.number(), p: z.number() })));
 
-type TF = 1 | 5 | 15 | 60;
-const TF_MINUTES: TF[] = [1, 5, 15, 60];
+type TF = 5 | 15 | 30 | 60;
+const TF_MINUTES: TF[] = [5, 15, 30, 60];
 
 function useCandles(series: TimeSeries, backfill: PricePoint[], nowTs: number, delayMs: number, tf: TF) {
   const intervalMs = tf * 60_000;
   return useMemo(() => {
     const displayCutoff = nowTs - delayMs;
-    const live = series.toArray().filter((p) => p.t <= displayCutoff);
-    return buildCandles([...backfill, ...live], intervalMs);
+    // Filter both historical and live points so none newer than cutoff leak.
+    const filteredBackfill = backfill.filter(p => p.t <= displayCutoff);
+    const filteredLive = series.toArray().filter(p => p.t <= displayCutoff);
+    const candlesAll = buildCandles([...filteredBackfill, ...filteredLive], intervalMs);
+    const cutoff = displayCutoff;
+    const allowPartial = delayMs === 0; // only show forming candle when truly live
+    if (allowPartial) return candlesAll; // show all (including last incomplete bucket)
+    return candlesAll.filter(c => (c.t + intervalMs) <= cutoff);
   }, [series, backfill, nowTs, delayMs, intervalMs]);
 }
 
 function BigPercent({ series, nowTs, delayMs, label, tvMode }: { series: TimeSeries; nowTs: number; delayMs: number; label?: string; tvMode?: boolean }) {
   const displayTs = nowTs - delayMs;
-  const pt = lerpAt(series, displayTs);
+  // Spoiler-safe: only use last point at or before displayTs (no forward interpolation).
+  const pt = series.atOrBefore(displayTs as number);
   if (!pt) {
     const arr = series.toArray();
     const secs = (() => {
@@ -60,49 +76,124 @@ function BigPercent({ series, nowTs, delayMs, label, tvMode }: { series: TimeSer
 
 function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCandles>; height?: number }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<{ chart: ReturnType<typeof createChart>; series: ISeriesApi<"Candlestick"> } | null>(null);
-  useEffect(() => {
-    let dispose: (() => void) | undefined;
-    (async () => {
-      if (!ref.current) return;
-      const opts = {
-        height,
-        layout: { textColor: "#cbd5e1", background: { color: "transparent" } },
-        rightPriceScale: { borderVisible: false },
-        timeScale: { borderVisible: false },
-        crosshair: { mode: CrosshairMode.Magnet },
-        grid: { horzLines: { color: "#1f2937" }, vertLines: { color: "#1f2937" } },
-      };
-      const chart = createChart(ref.current, opts);
-      const series = (chart as unknown as { addSeries: (opts: Record<string, unknown>) => ISeriesApi<"Candlestick"> }).addSeries({
-        type: "Candlestick",
-        upColor: "#10b981",
-        downColor: "#ef4444",
-        wickUpColor: "#10b981",
-        wickDownColor: "#ef4444",
-        borderVisible: false,
-      });
-      chartRef.current = { chart, series };
-      dispose = () => chart.remove();
-    })();
-    return () => dispose?.();
-  }, [height]);
+  const chartRef = useRef<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
+  const [chartErr, setChartErr] = useState<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
 
+  // Observe container width to avoid initializing chart at 0px width
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      const w = Math.floor((cr?.width ?? el.clientWidth) || 0);
+      setContainerWidth(w);
+    });
+    ro.observe(el);
+    // Seed initial width
+    const initialW = Math.floor(el.clientWidth || 0);
+    if (initialW) setContainerWidth(initialW);
+    return () => ro.disconnect();
+  }, []);
+
+  // Init or resize chart when size changes
+  useLayoutEffect(() => {
+    setChartErr(null);
+    try {
+      const el = ref.current;
+      if (!el) return;
+      if (containerWidth <= 0 || height <= 0) return;
+
+      if (!chartRef.current) {
+        const chart = createChart(el, {
+          width: containerWidth,
+          height,
+          layout: { textColor: "#cbd5e1", background: { color: "transparent" } },
+          rightPriceScale: { borderVisible: false },
+          timeScale: { borderVisible: false },
+          crosshair: { mode: CrosshairMode.Magnet },
+          grid: { horzLines: { color: "#1f2937" }, vertLines: { color: "#1f2937" } },
+        });
+        // Official v5 API: supply series definition constant first argument
+        type ChartWithAdd = IChartApi & { addSeries: (def: unknown, opts?: unknown) => ISeriesApi<"Candlestick"> };
+        const cwa = chart as ChartWithAdd;
+        if (typeof cwa.addSeries !== "function") {
+          throw new Error("lightweight-charts addSeries API unavailable");
+        }
+        const series = cwa.addSeries(CandlestickSeries, {
+          upColor: "#10b981",
+          downColor: "#ef4444",
+          wickUpColor: "#10b981",
+          wickDownColor: "#ef4444",
+          borderVisible: false,
+        });
+        chartRef.current = { chart, series };
+        return () => {
+          chart.remove();
+          chartRef.current = null;
+        };
+      }
+
+      chartRef.current.chart.applyOptions({ width: containerWidth, height });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Chart init failed";
+      console.error("[Chart] init error", e);
+      setChartErr(msg);
+    }
+  }, [containerWidth, height]);
+
+  // Set data on changes
   useEffect(() => {
     if (!chartRef.current) return;
-    const { series, chart } = chartRef.current;
-    const data: CandlestickData<UTCTimestamp>[] = candles.map((c: CandleType) => ({
-      time: Math.floor(c.t / 1000) as UTCTimestamp,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-    series.setData(data as unknown as (CandlestickData<UTCTimestamp>)[]);
-    chart.timeScale().fitContent();
+    try {
+      const { series, chart } = chartRef.current;
+      const mapped: CandlestickData<UTCTimestamp>[] = candles.map((c: CandleType) => ({
+        time: Math.floor(c.t / 1000) as UTCTimestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
+      const data: CandlestickData<UTCTimestamp>[] = [];
+      let lastTime: number | null = null;
+      for (const d of mapped) {
+        const t = d.time as number;
+        if (lastTime !== null && t <= lastTime) continue;
+        data.push(d);
+        lastTime = t;
+      }
+      if (data.length === 0) {
+        console.debug("[Chart] No candles to display", { candles: candles.length });
+        return;
+      }
+      series.setData(data);
+      chart.timeScale().fitContent();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Chart data error";
+      console.error("[Chart] data error", e);
+      setChartErr(msg);
+    }
   }, [candles]);
 
-  return <div ref={ref} className="w-full rounded-lg border border-neutral-800" style={{ height }} />;
+  const hasData = candles.length > 0;
+  return (
+    <div ref={ref} className="relative w-full rounded-lg border border-neutral-800" style={{ height }}>
+      {!hasData && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="rounded-md bg-black/60 px-3 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800">
+            No candles yet for this delay/timeframe
+          </div>
+        </div>
+      )}
+      {chartErr && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="rounded-md bg-red-950/70 px-3 py-2 text-sm text-red-200 ring-1 ring-red-800">
+            Chart error: {chartErr}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -125,11 +216,74 @@ export default function Home() {
   const [pov, setPov] = useState<"YES" | "NO">("YES");
   const delayMs = delaySec * 1000;
   const [tvMode, setTvMode] = useState(false);
+  // Auto keep screen awake in TV mode
+  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
+  const interactionRetryRef = useRef<(() => void) | null>(null);
 
-  const { seriesYes, seriesNo, tob } = useMarketWS(market?.yesTokenId, market?.noTokenId);
-  const [backfill, setBackfill] = useState<PricePoint[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    async function requestWakeLock() {
+      try {
+        const nav = navigator as NavigatorWithWakeLock;
+        if (!nav.wakeLock) return; // unsupported
+        const sentinel = (await nav.wakeLock.request("screen")) as unknown as WakeLockSentinelLike;
+        if (cancelled) {
+          try { await sentinel.release(); } catch {}
+          return;
+        }
+        wakeLockRef.current = sentinel;
+        sentinel.addEventListener?.("release", () => {
+          // auto re-acquire if desired; we'll re-acquire on visibility change below
+        });
+      } catch (e) {
+        console.warn("[WakeLock] request failed", e);
+        // Safari often requires a user gesture. Set up a one-time retry on next interaction.
+        if (!interactionRetryRef.current) {
+          const retry = async () => {
+            interactionRetryRef.current = null;
+            document.removeEventListener("click", retry);
+            document.removeEventListener("touchend", retry);
+            await requestWakeLock();
+          };
+          interactionRetryRef.current = retry;
+          document.addEventListener("click", retry, { once: true });
+          document.addEventListener("touchend", retry, { once: true });
+        }
+      }
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible" && tvMode) {
+        requestWakeLock();
+      }
+    }
+
+    if (tvMode) {
+      requestWakeLock();
+      document.addEventListener("visibilitychange", handleVisibility);
+    }
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (interactionRetryRef.current) {
+        const fn = interactionRetryRef.current;
+        interactionRetryRef.current = null;
+        document.removeEventListener("click", fn);
+        document.removeEventListener("touchend", fn);
+      }
+      const s = wakeLockRef.current;
+      wakeLockRef.current = null;
+      if (s) s.release().catch(() => {});
+    };
+  }, [tvMode]);
+
+  const { seriesYes, seriesNo } = useMarketWS(market?.yesTokenId, market?.noTokenId);
+  const [backfillYes, setBackfillYes] = useState<PricePoint[]>([]);
+  const [backfillNo, setBackfillNo] = useState<PricePoint[]>([]);
   const activeSeries = pov === "YES" ? seriesYes : seriesNo;
-  const candles = useCandles(activeSeries, backfill, nowTs, delayMs, tf);
+  const activeBackfill = pov === "YES" ? backfillYes : backfillNo;
+  const candles = useCandles(activeSeries, activeBackfill, nowTs, delayMs, tf);
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
 
@@ -153,16 +307,18 @@ export default function Home() {
       const { data } = await axios.post("/api/resolve", { url: target });
       console.debug("[Resolve] Response:", data);
       const m = data as MarketRef;
-      setMarket(m);
-      setBackfill([]);
+  setMarket(m);
+  setBackfillYes([]);
+  setBackfillNo([]);
       lastResolvedRef.current = target;
     } catch (e: unknown) {
       let message = "Failed to resolve market";
       if (e instanceof Error) message = e.message;
       console.error("[Resolve] Error:", e);
       setError(message);
-      setMarket(null);
-      setBackfill([]);
+  setMarket(null);
+  setBackfillYes([]);
+  setBackfillNo([]);
     } finally {
       setResolving(false);
     }
@@ -250,19 +406,49 @@ export default function Home() {
     return () => clearTimeout(id);
   }, [mounted, marketUrl, isLikelyUrl, resolveUrl]);
 
-  // Fetch history whenever market/tf changes
+  // Fetch YES and NO history whenever market or timeframe changes
   useEffect(() => {
     if (!market) return;
     (async () => {
       try {
-        console.debug("[History] GET /api/history", { tokenId: market.yesTokenId, fidelity: String(tf) });
-        const res = await axios.get("/api/history", { params: { tokenId: market.yesTokenId, fidelity: String(tf) } });
-        const parsed = HistorySchema.parse(res.data);
-        const history = Array.isArray(parsed) ? parsed : parsed.history;
-        setBackfill(history.map((h) => ({ t: h.t * 1000, p: h.p })));
+        const yesId = market.yesTokenId;
+        const noId = market.noTokenId;
+        console.debug("[History] batch fetch", { yesId, noId, fidelity: String(tf) });
+        // Always request highest available fidelity (1m) then aggregate locally for chosen timeframe
+        const [yesRes, noRes] = await Promise.allSettled([
+          axios.get("/api/history", { params: { tokenId: yesId, fidelity: "1" } }),
+          axios.get("/api/history", { params: { tokenId: noId, fidelity: "1" } }),
+        ]);
+        if (yesRes.status === "fulfilled") {
+          try {
+            const parsed = HistorySchema.parse(yesRes.value.data);
+            const history = Array.isArray(parsed) ? parsed : parsed.history;
+            setBackfillYes(history.map((h) => ({ t: h.t * 1000, p: h.p })));
+          } catch (e) {
+            console.warn("[History] YES parse failed", e);
+            setBackfillYes([]);
+          }
+        } else {
+          console.warn("[History] YES fetch failed", yesRes.reason);
+          setBackfillYes([]);
+        }
+        if (noRes.status === "fulfilled") {
+          try {
+            const parsed = HistorySchema.parse(noRes.value.data);
+            const history = Array.isArray(parsed) ? parsed : parsed.history;
+            setBackfillNo(history.map((h) => ({ t: h.t * 1000, p: h.p })));
+          } catch (e) {
+            console.warn("[History] NO parse failed", e);
+            setBackfillNo([]);
+          }
+        } else {
+            console.warn("[History] NO fetch failed", noRes.reason);
+            setBackfillNo([]);
+        }
       } catch (err) {
-        console.error("[History] fetch failed", err);
-        setBackfill([]);
+        console.error("[History] batch fetch unexpected error", err);
+        setBackfillYes([]);
+        setBackfillNo([]);
       }
     })();
   }, [market, tf]);
@@ -333,8 +519,18 @@ export default function Home() {
               <div className="text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2">{market.question}</div>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <div className="text-sm sm:text-base rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-slate-300">
-                {delaySec === 0 ? "Live" : `Delayed by ${Math.floor(delaySec / 60)}:${String(delaySec % 60).padStart(2, "0")}`}
+              <div className="text-sm sm:text-base rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-slate-300 flex items-center gap-2">
+                {delaySec === 0 ? (
+                  <>
+                    <span aria-hidden="true" className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                    </span>
+                    <span>Live</span>
+                  </>
+                ) : (
+                  <span>{`Delayed by ${Math.floor(delaySec / 60)}:${String(delaySec % 60).padStart(2, "0")}`}</span>
+                )}
               </div>
               {!tvMode && (
               <div className="flex items-center gap-2 text-sm">

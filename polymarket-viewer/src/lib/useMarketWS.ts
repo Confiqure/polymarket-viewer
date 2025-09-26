@@ -113,7 +113,6 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
             fetch(`/api/price?tokenId=${encodeURIComponent(yesTokenId)}`).then((r) => r.json()),
             fetch(`/api/price?tokenId=${encodeURIComponent(noTokenId)}`).then((r) => r.json()),
           ]);
-          console.debug("[Poll] price buy/sell:", buy, sell);
           if (buy?.bestBid != null) tobRef.current[yesTokenId].bestBid = parseFloat(buy.bestBid);
           if (buy?.bestAsk != null) tobRef.current[yesTokenId].bestAsk = parseFloat(buy.bestAsk);
           if (sell?.bestBid != null) tobRef.current[noTokenId].bestBid = parseFloat(sell.bestBid);
