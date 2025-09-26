@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { TimeSeries } from "./buffer";
 import type { TOB } from "./types";
 
+// Poll-only market feed (WebSocket to be implemented later)
 export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | undefined) {
   const seriesYesRef = useRef(new TimeSeries({ maxPoints: 50000, maxAgeMs: 1000 * 60 * 60 * 48 }));
   const seriesNoRef = useRef(new TimeSeries({ maxPoints: 50000, maxAgeMs: 1000 * 60 * 60 * 48 }));
@@ -18,7 +19,6 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
 
   useEffect(() => {
     if (!yesTokenId || !noTokenId) return;
-    const ids = [yesTokenId, noTokenId];
     tobRef.current[yesTokenId] = {};
     tobRef.current[noTokenId] = {};
 
@@ -52,61 +52,15 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
       return undefined;
     };
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://ws-subscriptions-clob.polymarket.com/ws/";
-    const ws = new WebSocket(wsUrl);
-    console.debug("[WS] connecting", { wsUrl, ids });
-
-    ws.onopen = () => {
-      console.debug("[WS] open, subscribing", { ids });
-      ws.send(JSON.stringify({ type: "MARKET", assets_ids: ids }));
-    };
-
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data as string);
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[WS] message", { event_type: msg.event_type, asset_id: msg.asset_id, count: msg?.price_changes?.length });
-        }
-        if (msg.event_type === "book") {
-          const id = msg.asset_id as string;
-          const bids = msg.bids ?? msg.buys;
-          const asks = msg.asks ?? msg.sells;
-          if (bids?.length) tobRef.current[id].bestBid = parseFloat(bids[0].price);
-          if (asks?.length) tobRef.current[id].bestAsk = parseFloat(asks[0].price);
-        } else if (msg.event_type === "price_change") {
-          for (const ch of msg.price_changes ?? []) {
-            const id = ch.asset_id as string;
-            if (ch.best_bid != null) tobRef.current[id].bestBid = parseFloat(ch.best_bid);
-            if (ch.best_ask != null) tobRef.current[id].bestAsk = parseFloat(ch.best_ask);
-          }
-        } else if (msg.event_type === "last_trade_price") {
-          const id = msg.asset_id as string;
-          if (msg.price != null) tobRef.current[id].last = parseFloat(msg.price);
-        }
-        const tNow = Date.now();
-        const probYes = computeBlendedProb();
-        const probNo = computeNoProb();
-        if (probYes != null && !Number.isNaN(probYes)) {
-          seriesYesRef.current.push({ t: tNow, p: probYes });
-        } else {
-          const y = tobRef.current[yesTokenId];
-          const n = tobRef.current[noTokenId];
-          console.warn("[WS] skip push invalid prob", {
-            yes: { bb: y?.bestBid, ba: y?.bestAsk, last: y?.last },
-            no: { bb: n?.bestBid, ba: n?.bestAsk, last: n?.last },
-          });
-        }
-        if (probNo != null && !Number.isNaN(probNo)) {
-          seriesNoRef.current.push({ t: tNow, p: probNo });
-        }
-      } catch (err) {
-        console.error("[WS] onmessage parse/error:", err);
+    const clearPolling = () => {
+      if (pollTimer.current) {
+        clearInterval(pollTimer.current);
+        pollTimer.current = null;
       }
     };
-
     const startPolling = () => {
       if (pollTimer.current) return;
-      console.warn("[WS] starting fallback REST polling");
+      console.debug("[Poll] starting price polling");
       pollTimer.current = setInterval(async () => {
         try {
           const [buy, sell] = await Promise.all([
@@ -120,41 +74,15 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
           const tNow = Date.now();
           const probYes = computeBlendedProb();
           const probNo = computeNoProb();
-          if (probYes != null && !Number.isNaN(probYes)) {
-            seriesYesRef.current.push({ t: tNow, p: probYes });
-          } else {
-            const y = tobRef.current[yesTokenId];
-            const n = tobRef.current[noTokenId];
-            console.warn("[Poll] skip push invalid prob", {
-              yes: { bb: y?.bestBid, ba: y?.bestAsk, last: y?.last },
-              no: { bb: n?.bestBid, ba: n?.bestAsk, last: n?.last },
-            });
-          }
-          if (probNo != null && !Number.isNaN(probNo)) {
-            seriesNoRef.current.push({ t: tNow, p: probNo });
-          }
+            if (probYes != null && !Number.isNaN(probYes)) seriesYesRef.current.push({ t: tNow, p: probYes });
+            if (probNo != null && !Number.isNaN(probNo)) seriesNoRef.current.push({ t: tNow, p: probNo });
         } catch (e) {
-          console.error("[Poll] error: ", e);
+          console.error("[Poll] error:", e);
         }
       }, 2000);
     };
-
-    ws.onclose = (ev) => {
-      console.warn("[WS] closed", { code: ev.code, reason: ev.reason });
-      startPolling();
-    };
-    ws.onerror = (ev) => {
-      console.error("[WS] error", ev);
-      startPolling();
-    };
-
-    return () => {
-      ws.close();
-      if (pollTimer.current) {
-        clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
-    };
+    startPolling();
+    return () => clearPolling();
   }, [yesTokenId, noTokenId]);
 
   const currentTOB = useMemo(() => tobRef.current, []);

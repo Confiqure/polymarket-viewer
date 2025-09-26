@@ -21,7 +21,7 @@ It’s designed for: stream overlays, venue displays, dashboards, and personal m
 
 | Feature | Notes |
 | ------- | ----- |
-| Realtime prices | WebSocket subscription with automatic REST polling fallback |
+| Realtime prices | REST polling with WebSocket planned |
 | Delayed view | Client-side buffer to avoid spoilers during live events |
 | Candles | Built from point-in-time price snapshots (aggregated client-side) |
 | Deep links | `?url=...&delay=30&tf=5&pov=yes&mode=tv` style sharing |
@@ -32,8 +32,8 @@ It’s designed for: stream overlays, venue displays, dashboards, and personal m
 
 1. `resolve` API -> normalizes a pasted Polymarket market/event URL into token IDs.
 2. History endpoint -> initial backfill (seconds -> ms normalization).
-3. Live feed -> WebSocket (bid/ask snapshots) -> in-memory ring buffers per outcome.
-4. Display time = `now - delayMs` -> interpolate/lerp to derive delayed spot price.
+3. Live feed -> REST polling of best bid/ask for each outcome -> in-memory series per outcome.
+4. Display time = `now - delayMs` -> last-at-or-before sample used (no forward interpolation for spoiler safety).
 5. Candlestick builder groups points into timeframe buckets on the client.
 
 ## Quick Start (Local Dev)
