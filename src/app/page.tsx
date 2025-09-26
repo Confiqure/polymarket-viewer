@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createChart, CrosshairMode, CandlestickSeries, type ISeriesApi, type CandlestickData, type UTCTimestamp, type IChartApi } from "lightweight-charts";
 import axios from "axios";
 import { z } from "zod";
@@ -196,7 +196,7 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
   );
 }
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -589,5 +589,23 @@ export default function Home() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  // Wrap client navigation hooks usage in Suspense to allow CSR bailout during SSG
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-black text-slate-200">
+          <div className="mx-auto max-w-4xl px-4 py-6">
+            <h1 className="text-2xl font-semibold">Polymarket Viewer</h1>
+            <div className="mt-4 h-6 w-40 animate-pulse rounded bg-neutral-800" />
+          </div>
+        </main>
+      }
+    >
+      <HomeContent />
+    </Suspense>
   );
 }
