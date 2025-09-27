@@ -126,21 +126,6 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
           crosshair: { mode: CrosshairMode.Magnet },
           grid: { horzLines: { color: "#1f2937" }, vertLines: { color: "#1f2937" } },
         });
-        // Broader interaction enablement (some options are version-specific)
-        (chart as any).applyOptions?.({
-          handleScale: {
-            axisDoubleClickReset: true,
-            mouseWheel: true,
-            pinch: true,
-            axisPressedMouseMove: { time: true, price: true },
-          },
-          handleScroll: {
-            mouseWheel: true,
-            pressedMouseMove: true,
-            horzTouchDrag: true,
-            vertTouchDrag: true,
-          },
-        });
         // Official v5 API: supply series definition constant first argument
         type ChartWithAdd = IChartApi & { addSeries: (def: unknown, opts?: unknown) => ISeriesApi<"Candlestick"> };
         const cwa = chart as ChartWithAdd;
@@ -155,11 +140,8 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
           borderVisible: false,
         });
         // Enable wheel and pinch zoom by default; track when the user interacts
-        chart.timeScale().applyOptions({
-          wheelScroll: true,
-          wheelScale: true,
-          rightOffset: 5,
-        } as any);
+        // Nudge view slightly so last candle isn't flush with edge
+        chart.timeScale().applyOptions({ rightOffset: 5 });
 
         // mark user zoom interaction to stop auto-fit until reset
         const ts = chart.timeScale();
