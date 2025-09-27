@@ -9,6 +9,7 @@ import { buildCandles } from "@/lib/candles";
 import { TimeSeries } from "@/lib/buffer";
 import { useMarketWS } from "@/lib/useMarketWS";
 import type { Candle as CandleType } from "@/lib/types";
+import { TIMEFRAME_MINUTES, TIMEFRAME_SET, type TF, tfToMs } from "@/lib/timeframes";
 
 // Minimal types for the Wake Lock API to avoid strict any
 type WakeLockSentinelLike = {
@@ -23,21 +24,30 @@ const HistorySchema = z
   .object({ history: z.array(z.object({ t: z.number(), p: z.number() })) })
   .or(z.array(z.object({ t: z.number(), p: z.number() })));
 
-type TF = 5 | 15 | 30 | 60;
-const TF_MINUTES: TF[] = [5, 15, 30, 60];
 
 function useCandles(series: TimeSeries, backfill: PricePoint[], nowTs: number, delayMs: number, tf: TF) {
-  const intervalMs = tf * 60_000;
+  const intervalMs = tfToMs(tf);
   return useMemo(() => {
     const displayCutoff = nowTs - delayMs;
     // Filter both historical and live points so none newer than cutoff leak.
     const filteredBackfill = backfill.filter(p => p.t <= displayCutoff);
     const filteredLive = series.toArray().filter(p => p.t <= displayCutoff);
     const candlesAll = buildCandles([...filteredBackfill, ...filteredLive], intervalMs);
-    const cutoff = displayCutoff;
-    const allowPartial = delayMs === 0; // only show forming candle when truly live
-    if (allowPartial) return candlesAll; // show all (including last incomplete bucket)
-    return candlesAll.filter(c => (c.t + intervalMs) <= cutoff);
+    // Extend with synthetic candles up to the current (delayed) bucket so the chart
+    // continues to update even when there's a gap in ticks. Uses last known price only.
+    if (candlesAll.length === 0) return candlesAll;
+    const currentBucketStart = Math.floor(displayCutoff / intervalMs) * intervalMs;
+    const extended = [...candlesAll];
+    let last = extended[extended.length - 1];
+    // fill forward one or more buckets with doji candles carrying forward last close
+    let t = last.t + intervalMs;
+    while (t <= currentBucketStart) {
+      const price = last.close;
+      extended.push({ t, open: price, high: price, low: price, close: price });
+      last = extended[extended.length - 1];
+      t += intervalMs;
+    }
+    return extended;
   }, [series, backfill, nowTs, delayMs, intervalMs]);
 }
 
@@ -79,6 +89,8 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
   const chartRef = useRef<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const userZoomedRef = useRef(false);
+  const programmaticRangeChangeRef = useRef(false);
 
   // Observe container width to avoid initializing chart at 0px width
   useLayoutEffect(() => {
@@ -114,6 +126,21 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
           crosshair: { mode: CrosshairMode.Magnet },
           grid: { horzLines: { color: "#1f2937" }, vertLines: { color: "#1f2937" } },
         });
+        // Broader interaction enablement (some options are version-specific)
+        (chart as any).applyOptions?.({
+          handleScale: {
+            axisDoubleClickReset: true,
+            mouseWheel: true,
+            pinch: true,
+            axisPressedMouseMove: { time: true, price: true },
+          },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: true,
+          },
+        });
         // Official v5 API: supply series definition constant first argument
         type ChartWithAdd = IChartApi & { addSeries: (def: unknown, opts?: unknown) => ISeriesApi<"Candlestick"> };
         const cwa = chart as ChartWithAdd;
@@ -127,8 +154,44 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
           wickDownColor: "#ef4444",
           borderVisible: false,
         });
+        // Enable wheel and pinch zoom by default; track when the user interacts
+        chart.timeScale().applyOptions({
+          wheelScroll: true,
+          wheelScale: true,
+          rightOffset: 5,
+        } as any);
+
+        // mark user zoom interaction to stop auto-fit until reset
+        const ts = chart.timeScale();
+        const handleVisibleLogicalRangeChange = () => {
+          // Ignore programmatic changes (fitContent, etc.)
+          if (programmaticRangeChangeRef.current) return;
+          // Any other change implies user interaction
+          userZoomedRef.current = true;
+        };
+        ts.subscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
+
+        // Double click resets zoom to fit content
+        const dbl = () => {
+          userZoomedRef.current = false;
+          programmaticRangeChangeRef.current = true;
+          try {
+            chart.timeScale().fitContent();
+          } finally {
+            // allow subscription to resume detecting manual changes
+            setTimeout(() => { programmaticRangeChangeRef.current = false; }, 0);
+          }
+        };
+        el.addEventListener("dblclick", dbl);
+
         chartRef.current = { chart, series };
         return () => {
+          try {
+            ts.unsubscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
+          } catch {}
+          try {
+            el.removeEventListener("dblclick", dbl);
+          } catch {}
           chart.remove();
           chartRef.current = null;
         };
@@ -167,7 +230,14 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
         return;
       }
       series.setData(data);
-      chart.timeScale().fitContent();
+      if (!userZoomedRef.current) {
+        programmaticRangeChangeRef.current = true;
+        try {
+          chart.timeScale().fitContent();
+        } finally {
+          setTimeout(() => { programmaticRangeChangeRef.current = false; }, 0);
+        }
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Chart data error";
       console.error("[Chart] data error", e);
@@ -340,8 +410,7 @@ function HomeContent() {
 
     const tfStr = qs.get("tf");
     const tfNum = tfStr != null ? Number.parseInt(tfStr) : NaN;
-    const allowed = new Set<number>([1, 5, 15, 60]);
-    if (!Number.isNaN(tfNum) && allowed.has(tfNum)) {
+    if (!Number.isNaN(tfNum) && TIMEFRAME_SET.has(tfNum)) {
       setTf((prev) => (prev !== tfNum ? (tfNum as TF) : prev));
     }
 
@@ -572,7 +641,7 @@ function HomeContent() {
                     setTf(v);
                   }}
                 >
-                  {TF_MINUTES.map((m) => (
+                  {TIMEFRAME_MINUTES.map((m) => (
                     <option key={m} value={m}>{m}m</option>
                   ))}
                 </select>
