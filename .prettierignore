@@ -1,0 +1,30 @@
+# Build outputs
+.next
+out
+build
+dist
+coverage
+
+# Package managers
+node_modules
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Env & misc
+.env*
+.parcel-cache
+.cache
+.DS_Store
+
+# Generated
+**/*.min.js
+**/*.min.css
+
+# Images and static
+public/*.svg
+public/*.png
+public/*.jpg
+public/*.jpeg
+public/*.gif
+public/*.webp

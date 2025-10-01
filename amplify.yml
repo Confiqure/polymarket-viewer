@@ -4,13 +4,15 @@ frontend:
     preBuild:
       commands:
         - npm ci
+        - npm run format:check
+        - npm run lint
     build:
       commands:
         - npm run build
   artifacts:
     baseDirectory: .next
     files:
-      - '**/*'
+      - "**/*"
   cache:
     paths:
       - node_modules/**/*

@@ -1,6 +1,14 @@
 "use client";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createChart, CrosshairMode, CandlestickSeries, type ISeriesApi, type CandlestickData, type UTCTimestamp, type IChartApi } from "lightweight-charts";
+import {
+  createChart,
+  CrosshairMode,
+  CandlestickSeries,
+  type ISeriesApi,
+  type CandlestickData,
+  type UTCTimestamp,
+  type IChartApi,
+} from "lightweight-charts";
 import axios from "axios";
 import { z } from "zod";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -28,9 +36,12 @@ const HistorySchema = z
 function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   let s = totalSeconds;
-  const d = Math.floor(s / 86400); s -= d * 86400;
-  const h = Math.floor(s / 3600); s -= h * 3600;
-  const m = Math.floor(s / 60); s -= m * 60;
+  const d = Math.floor(s / 86400);
+  s -= d * 86400;
+  const h = Math.floor(s / 3600);
+  s -= h * 3600;
+  const m = Math.floor(s / 60);
+  s -= m * 60;
   const parts: string[] = [];
   if (d) parts.push(`${d}d`);
   if (h) parts.push(`${h}h`);
@@ -42,14 +53,13 @@ function formatDuration(ms: number): string {
   return parts.slice(Math.max(0, parts.length - 2)).join(" ");
 }
 
-
 function useCandles(series: TimeSeries, backfill: PricePoint[], nowTs: number, delayMs: number, tf: TF) {
   const intervalMs = tfToMs(tf);
   return useMemo(() => {
     const displayCutoff = nowTs - delayMs;
     // Filter both historical and live points so none newer than cutoff leak.
-    const filteredBackfill = backfill.filter(p => p.t <= displayCutoff);
-    const filteredLive = series.toArray().filter(p => p.t <= displayCutoff);
+    const filteredBackfill = backfill.filter((p) => p.t <= displayCutoff);
+    const filteredLive = series.toArray().filter((p) => p.t <= displayCutoff);
     const candlesAll = buildCandles([...filteredBackfill, ...filteredLive], intervalMs);
     // Extend with synthetic candles up to the current (delayed) bucket so the chart
     // continues to update even when there's a gap in ticks. Uses last known price only.
@@ -69,7 +79,19 @@ function useCandles(series: TimeSeries, backfill: PricePoint[], nowTs: number, d
   }, [series, backfill, nowTs, delayMs, intervalMs]);
 }
 
-function BigPercent({ series, nowTs, delayMs, label, tvMode }: { series: TimeSeries; nowTs: number; delayMs: number; label?: string; tvMode?: boolean }) {
+function BigPercent({
+  series,
+  nowTs,
+  delayMs,
+  label,
+  tvMode,
+}: {
+  series: TimeSeries;
+  nowTs: number;
+  delayMs: number;
+  label?: string;
+  tvMode?: boolean;
+}) {
   const displayTs = nowTs - delayMs;
   // Spoiler-safe: only use last point at or before displayTs (no forward interpolation).
   const pt = series.atOrBefore(displayTs as number);
@@ -83,26 +105,39 @@ function BigPercent({ series, nowTs, delayMs, label, tvMode }: { series: TimeSer
       return Math.ceil(remainingMs / 1000);
     })();
     return (
-      <div className="text-center my-6">
+      <div className="my-6 text-center">
         <div className={`font-extrabold tracking-tight ${tvMode ? "text-[clamp(3rem,10vw,10rem)]" : "text-7xl"}`}>
           {secs != null ? `${secs}s` : "…"}
         </div>
         <div className={`${tvMode ? "text-xl sm:text-2xl" : "text-sm sm:text-base"} text-neutral-400`}>
-          {label ? `${label} to win • ` : ""}{secs != null ? "data available soon" : "waiting for market data"}
+          {label ? `${label} to win • ` : ""}
+          {secs != null ? "data available soon" : "waiting for market data"}
         </div>
       </div>
     );
   }
   const pct = (pt.p * 100).toFixed(1);
   return (
-    <div className="text-center my-6">
-      <div className={`font-extrabold tracking-tight ${tvMode ? "text-[clamp(3rem,10vw,10rem)]" : "text-7xl"}`}>{pct}%</div>
-      <div className={`${tvMode ? "text-2xl sm:text-3xl" : "text-base sm:text-lg"} text-neutral-300`}>{label ?? "Outcome"} to win</div>
+    <div className="my-6 text-center">
+      <div className={`font-extrabold tracking-tight ${tvMode ? "text-[clamp(3rem,10vw,10rem)]" : "text-7xl"}`}>
+        {pct}%
+      </div>
+      <div className={`${tvMode ? "text-2xl sm:text-3xl" : "text-base sm:text-lg"} text-neutral-300`}>
+        {label ?? "Outcome"} to win
+      </div>
     </div>
   );
 }
 
-function Chart({ candles, height = 320, tvMode = false }: { candles: ReturnType<typeof buildCandles>; height?: number; tvMode?: boolean }) {
+function Chart({
+  candles,
+  height = 320,
+  tvMode = false,
+}: {
+  candles: ReturnType<typeof buildCandles>;
+  height?: number;
+  tvMode?: boolean;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
   const [chartErr, setChartErr] = useState<string | null>(null);
@@ -208,8 +243,8 @@ function Chart({ candles, height = 320, tvMode = false }: { candles: ReturnType<
       }
 
       chartRef.current.chart.applyOptions({ width: containerWidth, height });
-  // Recompute zoom state on resize (throttled by rAF)
-  requestAnimationFrame(() => recomputeZoomState());
+      // Recompute zoom state on resize (throttled by rAF)
+      requestAnimationFrame(() => recomputeZoomState());
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Chart init failed";
       console.error("[Chart] init error", e);
@@ -263,10 +298,15 @@ function Chart({ candles, height = 320, tvMode = false }: { candles: ReturnType<
         const fourHours = 4 * 60 * 60;
         programmaticRangeChangeRef.current = true;
         try {
-          chart.timeScale().setVisibleRange({ from: (lastSec - fourHours) as UTCTimestamp, to: lastSec as UTCTimestamp });
+          chart
+            .timeScale()
+            .setVisibleRange({ from: (lastSec - fourHours) as UTCTimestamp, to: lastSec as UTCTimestamp });
         } finally {
           appliedInitialWindowRef.current = true;
-          setTimeout(() => { programmaticRangeChangeRef.current = false; recomputeZoomState(); }, 0);
+          setTimeout(() => {
+            programmaticRangeChangeRef.current = false;
+            recomputeZoomState();
+          }, 0);
         }
       } else {
         // Recompute zoom state after data updates
@@ -301,7 +341,7 @@ function Chart({ candles, height = 320, tvMode = false }: { candles: ReturnType<
       )}
       {/* Reset zoom button (hidden in TV mode) */}
       {hasData && zoomed && !chartErr && !tvMode && (
-        <div className="absolute left-2 top-2 z-10">
+        <div className="absolute top-2 left-2 z-10">
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-md bg-neutral-900/80 px-2 py-1 text-xs text-neutral-200 ring-1 ring-neutral-700 hover:bg-neutral-800"
@@ -314,7 +354,9 @@ function Chart({ candles, height = 320, tvMode = false }: { candles: ReturnType<
               try {
                 c.timeScale().fitContent();
               } finally {
-                setTimeout(() => { programmaticRangeChangeRef.current = false; }, 0);
+                setTimeout(() => {
+                  programmaticRangeChangeRef.current = false;
+                }, 0);
               }
             }}
           >
@@ -362,7 +404,9 @@ function HomeContent() {
         if (!nav.wakeLock) return; // unsupported
         const sentinel = (await nav.wakeLock.request("screen")) as unknown as WakeLockSentinelLike;
         if (cancelled) {
-          try { await sentinel.release(); } catch {}
+          try {
+            await sentinel.release();
+          } catch {}
           return;
         }
         wakeLockRef.current = sentinel;
@@ -486,17 +530,17 @@ function HomeContent() {
   // Global: toggle TV mode with 't' (ignore when typing or with modifiers)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.key || e.key.toLowerCase() !== 't') return;
+      if (!e.key || e.key.toLowerCase() !== "t") return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       const target = e.target as HTMLElement | null;
-      const tag = (target?.tagName || '').toLowerCase();
-      const editing = tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+      const tag = (target?.tagName || "").toLowerCase();
+      const editing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
       if (editing) return;
       e.preventDefault();
-      setTvMode(prev => !prev);
+      setTvMode((prev) => !prev);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const { seriesYes, seriesNo } = useMarketWS(market?.yesTokenId, market?.noTokenId);
@@ -518,32 +562,35 @@ function HomeContent() {
     }
   }, []);
 
-  const resolveUrl = useCallback(async (u?: string) => {
-    setError(null);
-    const target = (u ?? marketUrl).trim();
-    if (!target) return;
-    try {
-      setResolving(true);
-      console.debug("[Resolve] POST /api/resolve", { url: target });
-      const { data } = await axios.post("/api/resolve", { url: target });
-      console.debug("[Resolve] Response:", data);
-      const m = data as MarketRef;
-  setMarket(m);
-  setBackfillYes([]);
-  setBackfillNo([]);
-      lastResolvedRef.current = target;
-    } catch (e: unknown) {
-      let message = "Failed to resolve market";
-      if (e instanceof Error) message = e.message;
-      console.error("[Resolve] Error:", e);
-      setError(message);
-  setMarket(null);
-  setBackfillYes([]);
-  setBackfillNo([]);
-    } finally {
-      setResolving(false);
-    }
-  }, [marketUrl]);
+  const resolveUrl = useCallback(
+    async (u?: string) => {
+      setError(null);
+      const target = (u ?? marketUrl).trim();
+      if (!target) return;
+      try {
+        setResolving(true);
+        console.debug("[Resolve] POST /api/resolve", { url: target });
+        const { data } = await axios.post("/api/resolve", { url: target });
+        console.debug("[Resolve] Response:", data);
+        const m = data as MarketRef;
+        setMarket(m);
+        setBackfillYes([]);
+        setBackfillNo([]);
+        lastResolvedRef.current = target;
+      } catch (e: unknown) {
+        let message = "Failed to resolve market";
+        if (e instanceof Error) message = e.message;
+        console.error("[Resolve] Error:", e);
+        setError(message);
+        setMarket(null);
+        setBackfillYes([]);
+        setBackfillNo([]);
+      } finally {
+        setResolving(false);
+      }
+    },
+    [marketUrl],
+  );
 
   // Sync state from URL params
   useEffect(() => {
@@ -580,11 +627,13 @@ function HomeContent() {
     if (!mounted) return;
     const params = new URLSearchParams(currentQS);
     const prevUrl = params.get("url") ?? "";
-    if (marketUrl) params.set("url", marketUrl); else params.delete("url");
+    if (marketUrl) params.set("url", marketUrl);
+    else params.delete("url");
     params.set("delay", String(delaySec));
     params.set("tf", String(tf));
     params.set("pov", pov.toLowerCase());
-    if (tvMode) params.set("mode", "tv"); else params.delete("mode");
+    if (tvMode) params.set("mode", "tv");
+    else params.delete("mode");
     const next = params.toString();
     const current = currentQS;
     if (next !== current) {
@@ -662,8 +711,8 @@ function HomeContent() {
             setBackfillNo([]);
           }
         } else {
-            console.warn("[History] NO fetch failed", noRes.reason);
-            setBackfillNo([]);
+          console.warn("[History] NO fetch failed", noRes.reason);
+          setBackfillNo([]);
         }
       } catch (err) {
         console.error("[History] batch fetch unexpected error", err);
@@ -688,7 +737,7 @@ function HomeContent() {
           <h1 className="text-2xl font-semibold">Polymarket Viewer</h1>
           <div className="mt-4 flex items-center gap-2">
             <input
-              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 outline-none ring-1 ring-neutral-800"
+              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-800 outline-none"
               placeholder="Paste Polymarket URL (event or market)"
               value={marketUrl}
               onChange={(e) => setMarketUrl(e.target.value)}
@@ -709,29 +758,31 @@ function HomeContent() {
     <main className="min-h-screen bg-black text-slate-200">
       <div className={`mx-auto ${tvMode ? "max-w-6xl" : "max-w-4xl"} px-4 py-6`}>
         <div className="flex items-center justify-between gap-4">
-          <h1 className={`font-semibold ${tvMode && market ? "text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2" : "text-xl sm:text-2xl"}`}>
-            {tvMode && market ? (market.question || "") : "Polymarket Viewer"}
+          <h1
+            className={`font-semibold ${tvMode && market ? "line-clamp-2 text-base text-slate-300 sm:text-lg md:text-xl" : "text-xl sm:text-2xl"}`}
+          >
+            {tvMode && market ? market.question || "" : "Polymarket Viewer"}
           </h1>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className={`inline-flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-1.5 text-xs sm:text-sm ring-1 transition ${shareStatus === 'copied' ? 'text-emerald-200 ring-emerald-600' : 'text-neutral-300 ring-neutral-700 hover:ring-neutral-500'}`}
+              className={`inline-flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-1.5 text-xs ring-1 transition sm:text-sm ${shareStatus === "copied" ? "text-emerald-200 ring-emerald-600" : "text-neutral-300 ring-neutral-700 hover:ring-neutral-500"}`}
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(window.location.href);
-                  setShareStatus('copied');
-                  setTimeout(() => setShareStatus('idle'), 1200);
+                  setShareStatus("copied");
+                  setTimeout(() => setShareStatus("idle"), 1200);
                 } catch {
-                  setShareStatus('failed');
-                  setTimeout(() => setShareStatus('idle'), 1200);
+                  setShareStatus("failed");
+                  setTimeout(() => setShareStatus("idle"), 1200);
                 }
               }}
               aria-label="Copy shareable link"
               title="Copy shareable link"
             >
-              {shareStatus === 'idle' && 'Share'}
-              {shareStatus === 'copied' && '✅ Copied'}
-              {shareStatus === 'failed' && '❌ Failed'}
+              {shareStatus === "idle" && "Share"}
+              {shareStatus === "copied" && "✅ Copied"}
+              {shareStatus === "failed" && "❌ Failed"}
             </button>
             <label className="inline-flex items-center gap-2 text-sm">
               <input
@@ -745,8 +796,10 @@ function HomeContent() {
           </div>
         </div>
         {tvMode && tvHintRender && (
-          <div className={`pointer-events-none fixed inset-x-0 top-2 z-50 flex justify-center transition-opacity duration-300 ${tvHintVisible ? "opacity-100" : "opacity-0"}`}>
-            <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/95 px-3 py-1 text-xs text-neutral-200 ring-1 ring-neutral-700 shadow-lg">
+          <div
+            className={`pointer-events-none fixed inset-x-0 top-2 z-50 flex justify-center transition-opacity duration-300 ${tvHintVisible ? "opacity-100" : "opacity-0"}`}
+          >
+            <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/95 px-3 py-1 text-xs text-neutral-200 shadow-lg ring-1 ring-neutral-700">
               Press F to toggle fullscreen
             </span>
           </div>
@@ -754,7 +807,7 @@ function HomeContent() {
         {!tvMode && (
           <div className="mt-4 flex items-center gap-3">
             <input
-              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 outline-none ring-1 ring-neutral-800 focus:ring-indigo-500"
+              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 ring-1 ring-neutral-800 outline-none focus:ring-indigo-500"
               placeholder="Paste Polymarket URL (event or market)"
               value={marketUrl}
               onChange={(e) => setMarketUrl(e.target.value)}
@@ -768,18 +821,18 @@ function HomeContent() {
           </div>
         )}
         {error && (
-          <div className="mt-3 rounded-md bg-red-950 text-red-200 px-3 py-2 border border-red-800">{error}</div>
+          <div className="mt-3 rounded-md border border-red-800 bg-red-950 px-3 py-2 text-red-200">{error}</div>
         )}
         {market && (
           <div className="mt-4">
             {!tvMode && (
-              <div className="text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2">{market.question}</div>
+              <div className="line-clamp-2 text-base text-slate-300 sm:text-lg md:text-xl">{market.question}</div>
             )}
             {!tvMode && (
-              <div className="mt-3 flex flex-wrap items-center gap-3 relative pl-3 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-0.5 before:rounded-full before:bg-neutral-700">
+              <div className="relative mt-3 flex flex-wrap items-center gap-3 pl-3 before:absolute before:top-1/2 before:left-0 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-neutral-700">
                 <div className="flex items-center gap-2 text-sm">
                   <span>Outcome</span>
-                  <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800 bg-neutral-900">
+                  <div className="inline-flex overflow-hidden rounded-md bg-neutral-900 ring-1 ring-neutral-800">
                     <button
                       type="button"
                       className={`px-4 py-2 text-sm font-semibold ${pov === "YES" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
@@ -798,7 +851,14 @@ function HomeContent() {
                 </div>
                 <label className="flex items-center gap-2 text-sm">
                   Delay
-                  <input type="number" min={0} max={600} className="w-20 rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800" value={delaySec} onChange={(e) => setDelaySec(Number(e.target.value))} />
+                  <input
+                    type="number"
+                    min={0}
+                    max={600}
+                    className="w-20 rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800"
+                    value={delaySec}
+                    onChange={(e) => setDelaySec(Number(e.target.value))}
+                  />
                   s
                 </label>
                 <label className="flex items-center gap-2 text-sm">
@@ -812,19 +872,25 @@ function HomeContent() {
                     }}
                   >
                     {TIMEFRAME_MINUTES.map((m) => (
-                      <option key={m} value={m}>{m}m</option>
+                      <option key={m} value={m}>
+                        {m}m
+                      </option>
                     ))}
                   </select>
                 </label>
               </div>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <div className={`rounded-full bg-neutral-900 ring-1 ring-neutral-800 text-slate-300 flex items-center gap-2 ${tvMode ? "text-base sm:text-lg px-4 py-2" : "text-xs sm:text-sm px-3 py-1.5"}`}>
+              <div
+                className={`flex items-center gap-2 rounded-full bg-neutral-900 text-slate-300 ring-1 ring-neutral-800 ${tvMode ? "px-4 py-2 text-base sm:text-lg" : "px-3 py-1.5 text-xs sm:text-sm"}`}
+              >
                 {delaySec === 0 ? (
                   <>
                     <span aria-hidden="true" className={`relative flex ${tvMode ? "h-3 w-3" : "h-2.5 w-2.5"}`}>
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
-                      <span className={`relative inline-flex rounded-full bg-emerald-400 ${tvMode ? "h-3 w-3" : "h-2.5 w-2.5"}`} />
+                      <span
+                        className={`relative inline-flex rounded-full bg-emerald-400 ${tvMode ? "h-3 w-3" : "h-2.5 w-2.5"}`}
+                      />
                     </span>
                     <span>Live</span>
                   </>
@@ -833,8 +899,10 @@ function HomeContent() {
                 )}
               </div>
               {!tvMode && endsDeltaMs != null && (
-                <div className="text-xs sm:text-sm rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-neutral-400">
-                  {endsDeltaMs > 0 ? `Ends in ${formatDuration(endsDeltaMs)}` : `Ended ${formatDuration(-endsDeltaMs)} ago`}
+                <div className="rounded-full bg-neutral-900 px-3 py-1.5 text-xs text-neutral-400 ring-1 ring-neutral-800 sm:text-sm">
+                  {endsDeltaMs > 0
+                    ? `Ends in ${formatDuration(endsDeltaMs)}`
+                    : `Ended ${formatDuration(-endsDeltaMs)} ago`}
                 </div>
               )}
               {!tvMode && market?.slug && (
@@ -842,7 +910,7 @@ function HomeContent() {
                   href={`https://polymarket.com/market/${market.slug}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs sm:text-sm inline-flex items-center gap-1 rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-neutral-300 hover:ring-neutral-600"
+                  className="inline-flex items-center gap-1 rounded-full bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300 ring-1 ring-neutral-800 hover:ring-neutral-600 sm:text-sm"
                 >
                   Open on Polymarket
                   <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
@@ -852,7 +920,13 @@ function HomeContent() {
                 </a>
               )}
             </div>
-            <BigPercent series={activeSeries} nowTs={nowTs} delayMs={delayMs} label={pov === "YES" ? market?.yesLabel : market?.noLabel} tvMode={tvMode} />
+            <BigPercent
+              series={activeSeries}
+              nowTs={nowTs}
+              delayMs={delayMs}
+              label={pov === "YES" ? market?.yesLabel : market?.noLabel}
+              tvMode={tvMode}
+            />
             <div className="mt-4">
               <Chart candles={candles} height={tvMode ? 480 : 360} tvMode={tvMode} />
             </div>
@@ -860,13 +934,17 @@ function HomeContent() {
         )}
         {!tvMode && (
           <div className="mt-10 border-t border-neutral-800 pt-6 text-center">
-            <div className="text-sm sm:text-base text-neutral-400">
-              Made with <span role="img" aria-label="love" className="mx-1">❤️</span> by{' '}
+            <div className="text-sm text-neutral-400 sm:text-base">
+              Made with{" "}
+              <span role="img" aria-label="love" className="mx-1">
+                ❤️
+              </span>{" "}
+              by{" "}
               <a
                 href="https://dylanwheeler.net"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hover:text-neutral-200 underline underline-offset-4 decoration-neutral-700 hover:decoration-neutral-400"
+                className="underline decoration-neutral-700 underline-offset-4 hover:text-neutral-200 hover:decoration-neutral-400"
               >
                 Dylan
               </a>
@@ -875,7 +953,7 @@ function HomeContent() {
               href="https://github.com/Confiqure/polymarket-viewer"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-2 rounded-full bg-neutral-900 px-3 py-1.5 text-xs sm:text-sm text-neutral-300 ring-1 ring-neutral-700 hover:ring-neutral-500"
+              className="mt-3 inline-flex items-center gap-2 rounded-full bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300 ring-1 ring-neutral-700 hover:ring-neutral-500 sm:text-sm"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
                 <path d="M12 .5C5.73.5.95 5.28.95 11.55c0 4.86 3.16 8.98 7.55 10.43.55.1.75-.24.75-.53 0-.26-.01-1.13-.02-2.05-3.07.67-3.72-1.31-3.72-1.31-.5-1.27-1.22-1.61-1.22-1.61-.99-.68.07-.66.07-.66 1.09.08 1.66 1.12 1.66 1.12.97 1.65 2.54 1.18 3.16.9.1-.7.38-1.18.69-1.45-2.45-.28-5.02-1.23-5.02-5.48 0-1.21.43-2.19 1.12-2.96-.11-.28-.49-1.41.11-2.93 0 0 .92-.29 3.02 1.13a10.5 10.5 0 0 1 2.75-.37c.93 0 1.86.12 2.75.37 2.1-1.42 3.02-1.13 3.02-1.13.6 1.52.22 2.65.11 2.93.69.77 1.12 1.75 1.12 2.96 0 4.26-2.58 5.2-5.04 5.47.39.34.73 1.01.73 2.04 0 1.47-.01 2.65-.01 3.01 0 .29.2.64.75.53 4.39-1.45 7.55-5.57 7.55-10.43C23.05 5.28 18.27.5 12 .5z" />

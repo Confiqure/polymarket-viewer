@@ -19,14 +19,14 @@ It’s designed for: stream overlays, venue displays, dashboards, and personal m
 
 ## Core Features
 
-| Feature | Notes |
-| ------- | ----- |
-| Realtime prices | REST polling with WebSocket planned |
-| Delayed view | Client-side buffer to avoid spoilers during live events |
-| Candles | Built from point-in-time price snapshots (aggregated client-side) |
-| Deep links | `?url=...&delay=30&tf=5&pov=yes&mode=tv` style sharing |
-| TV Mode | Enlarged probability, auto wake lock, minimal chrome |
-| Resilient | Graceful degradation if WS fails (no hard crash) |
+| Feature         | Notes                                                             |
+| --------------- | ----------------------------------------------------------------- |
+| Realtime prices | REST polling with WebSocket planned                               |
+| Delayed view    | Client-side buffer to avoid spoilers during live events           |
+| Candles         | Built from point-in-time price snapshots (aggregated client-side) |
+| Deep links      | `?url=...&delay=30&tf=5&pov=yes&mode=tv` style sharing            |
+| TV Mode         | Enlarged probability, auto wake lock, minimal chrome              |
+| Resilient       | Graceful degradation if WS fails (no hard crash)                  |
 
 ## Data Flow Overview
 
@@ -48,13 +48,13 @@ Paste a Polymarket market or event URL (e.g. `https://polymarket.com/event/...`)
 
 ## URL Parameters
 
-| Param | Example | Description |
-| ----- | ------- | ----------- |
-| `url` | `?url=https://polymarket.com/event/...` | Market/event link to auto-resolve |
-| `delay` | `delay=30` | Seconds of display delay (0–600) |
-| `tf` | `tf=5` | Candle timeframe in minutes (1,5,15,60) |
-| `pov` | `pov=yes` | Outcome perspective (`yes` or `no`) |
-| `mode` | `mode=tv` | TV mode (large probability, wake lock) |
+| Param   | Example                                 | Description                             |
+| ------- | --------------------------------------- | --------------------------------------- |
+| `url`   | `?url=https://polymarket.com/event/...` | Market/event link to auto-resolve       |
+| `delay` | `delay=30`                              | Seconds of display delay (0–600)        |
+| `tf`    | `tf=5`                                  | Candle timeframe in minutes (1,5,15,60) |
+| `pov`   | `pov=yes`                               | Outcome perspective (`yes` or `no`)     |
+| `mode`  | `mode=tv`                               | TV mode (large probability, wake lock)  |
 
 Examples:
 
@@ -80,4 +80,5 @@ Lightweight project; PRs welcome for stability, performance, or data correctness
 MIT License – see `LICENSE` file. “Polymarket” is a trademark of its respective owner; usage here is purely descriptive.
 
 ---
+
 Questions / features you’d like? Open an issue or drop a note.

@@ -12,8 +12,8 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
 
   // reset state when tokens change
   useEffect(() => {
-  seriesYesRef.current = new TimeSeries({ maxPoints: 50000, maxAgeMs: 1000 * 60 * 60 * 48 });
-  seriesNoRef.current = new TimeSeries({ maxPoints: 50000, maxAgeMs: 1000 * 60 * 60 * 48 });
+    seriesYesRef.current = new TimeSeries({ maxPoints: 50000, maxAgeMs: 1000 * 60 * 60 * 48 });
+    seriesNoRef.current = new TimeSeries({ maxPoints: 50000, maxAgeMs: 1000 * 60 * 60 * 48 });
     tobRef.current = {};
   }, [yesTokenId, noTokenId]);
 
@@ -74,8 +74,8 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
           const tNow = Date.now();
           const probYes = computeBlendedProb();
           const probNo = computeNoProb();
-            if (probYes != null && !Number.isNaN(probYes)) seriesYesRef.current.push({ t: tNow, p: probYes });
-            if (probNo != null && !Number.isNaN(probNo)) seriesNoRef.current.push({ t: tNow, p: probNo });
+          if (probYes != null && !Number.isNaN(probYes)) seriesYesRef.current.push({ t: tNow, p: probYes });
+          if (probNo != null && !Number.isNaN(probNo)) seriesNoRef.current.push({ t: tNow, p: probNo });
         } catch (e) {
           console.error("[Poll] error:", e);
         }

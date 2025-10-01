@@ -19,7 +19,10 @@ export const metadata: Metadata = {
   },
   description: "TV-friendly delayed probability & candlestick viewer for Polymarket markets.",
   applicationName: "Polymarket Viewer",
-  metadataBase: typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SITE_URL ? new URL(process.env.NEXT_PUBLIC_SITE_URL) : undefined,
+  metadataBase:
+    typeof process !== "undefined" && process.env.NEXT_PUBLIC_SITE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SITE_URL)
+      : undefined,
   openGraph: {
     title: "Polymarket Viewer",
     description: "Large-format delayed probabilities & lightweight candlesticks for Polymarket.",
@@ -54,10 +57,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
       </body>
     </html>

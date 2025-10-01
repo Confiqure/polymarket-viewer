@@ -16,7 +16,9 @@ export class TimeSeries {
     if (this.maxAgeMs != null) {
       const cutoff = p.t - this.maxAgeMs;
       // Find first index with t >= cutoff (lower_bound)
-      let lo = 0, hi = this.buf.length - 1, idx = this.buf.length;
+      let lo = 0,
+        hi = this.buf.length - 1,
+        idx = this.buf.length;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
         if (this.buf[mid].t >= cutoff) {
@@ -36,7 +38,9 @@ export class TimeSeries {
   atOrBefore(ts: number): PricePoint | undefined {
     const arr = this.buf;
     if (arr.length === 0) return undefined;
-    let lo = 0, hi = arr.length - 1, ans = -1;
+    let lo = 0,
+      hi = arr.length - 1,
+      ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       const mt = arr[mid].t;
@@ -52,7 +56,9 @@ export class TimeSeries {
   indexAtOrBefore(ts: number): number {
     const arr = this.buf;
     if (arr.length === 0) return -1;
-    let lo = 0, hi = arr.length - 1, ans = -1;
+    let lo = 0,
+      hi = arr.length - 1,
+      ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       const mt = arr[mid].t;
@@ -68,7 +74,9 @@ export class TimeSeries {
   range(fromTs: number): PricePoint[] {
     const arr = this.buf;
     if (arr.length === 0) return [];
-    let lo = 0, hi = arr.length - 1, idx = arr.length;
+    let lo = 0,
+      hi = arr.length - 1,
+      idx = arr.length;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       if (arr[mid].t >= fromTs) {
