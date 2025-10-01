@@ -24,6 +24,24 @@ const HistorySchema = z
   .object({ history: z.array(z.object({ t: z.number(), p: z.number() })) })
   .or(z.array(z.object({ t: z.number(), p: z.number() })));
 
+// Format a duration like 1d 2h, 3h 15m, 5m 2s, or 12s
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  let s = totalSeconds;
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  parts.push(`${s}s`);
+  // Limit granularity: if days exist, show d h; else if hours exist, show h m s; else show m s
+  if (d) return parts.slice(0, 2).join(" ");
+  if (h) return parts.slice(0, 3).join(" ");
+  return parts.slice(Math.max(0, parts.length - 2)).join(" ");
+}
+
 
 function useCandles(series: TimeSeries, backfill: PricePoint[], nowTs: number, delayMs: number, tf: TF) {
   const intervalMs = tfToMs(tf);
@@ -84,13 +102,37 @@ function BigPercent({ series, nowTs, delayMs, label, tvMode }: { series: TimeSer
   );
 }
 
-function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCandles>; height?: number }) {
+function Chart({ candles, height = 320, tvMode = false }: { candles: ReturnType<typeof buildCandles>; height?: number; tvMode?: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const userZoomedRef = useRef(false);
   const programmaticRangeChangeRef = useRef(false);
+  const [zoomed, setZoomed] = useState(false);
+  const appliedInitialWindowRef = useRef(false);
+  const prevSeriesStartRef = useRef<number | null>(null);
+  const totalFromSecRef = useRef<number | null>(null);
+  const totalToSecRef = useRef<number | null>(null);
+
+  // Recompute whether we're in a fully zoomed-out (fit) state
+  const recomputeZoomState = useCallback(() => {
+    try {
+      const c = chartRef.current?.chart;
+      if (!c) return;
+      const vr = c.timeScale().getVisibleRange();
+      if (!vr) return;
+      const firstSec = totalFromSecRef.current;
+      const lastSec = totalToSecRef.current;
+      if (firstSec == null || lastSec == null) return;
+      const span = Math.max(1, lastSec - firstSec);
+      const tol = Math.max(60, Math.floor(span * 0.01)); // 1% or >= 60s
+      const from = (vr.from as number) ?? firstSec;
+      const to = (vr.to as number) ?? lastSec;
+      const isFit = from <= firstSec + tol && to >= lastSec - tol;
+      setZoomed(!isFit);
+    } catch {}
+  }, []);
 
   // Observe container width to avoid initializing chart at 0px width
   useLayoutEffect(() => {
@@ -146,33 +188,19 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
         // mark user zoom interaction to stop auto-fit until reset
         const ts = chart.timeScale();
         const handleVisibleLogicalRangeChange = () => {
-          // Ignore programmatic changes (fitContent, etc.)
-          if (programmaticRangeChangeRef.current) return;
-          // Any other change implies user interaction
-          userZoomedRef.current = true;
+          // Mark user interaction when not programmatic, but always recompute zoom state
+          if (!programmaticRangeChangeRef.current) {
+            userZoomedRef.current = true;
+          }
+          // Debounce recompute slightly to avoid rapid toggling
+          requestAnimationFrame(() => recomputeZoomState());
         };
         ts.subscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
-
-        // Double click resets zoom to fit content
-        const dbl = () => {
-          userZoomedRef.current = false;
-          programmaticRangeChangeRef.current = true;
-          try {
-            chart.timeScale().fitContent();
-          } finally {
-            // allow subscription to resume detecting manual changes
-            setTimeout(() => { programmaticRangeChangeRef.current = false; }, 0);
-          }
-        };
-        el.addEventListener("dblclick", dbl);
 
         chartRef.current = { chart, series };
         return () => {
           try {
             ts.unsubscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
-          } catch {}
-          try {
-            el.removeEventListener("dblclick", dbl);
           } catch {}
           chart.remove();
           chartRef.current = null;
@@ -180,12 +208,14 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
       }
 
       chartRef.current.chart.applyOptions({ width: containerWidth, height });
+  // Recompute zoom state on resize (throttled by rAF)
+  requestAnimationFrame(() => recomputeZoomState());
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Chart init failed";
       console.error("[Chart] init error", e);
       setChartErr(msg);
     }
-  }, [containerWidth, height]);
+  }, [containerWidth, height, recomputeZoomState]);
 
   // Set data on changes
   useEffect(() => {
@@ -211,13 +241,38 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
         console.debug("[Chart] No candles to display", { candles: candles.length });
         return;
       }
+      // Detect series change (first timestamp change) and reset the initial window flag
+      const firstTs = candles[0]?.t ?? null;
+      if (firstTs !== prevSeriesStartRef.current) {
+        prevSeriesStartRef.current = firstTs;
+        appliedInitialWindowRef.current = false;
+        userZoomedRef.current = false;
+      }
+
       series.setData(data);
-      if (!userZoomedRef.current) {
+
+      // Cache total bounds for stable comparisons
+      const firstSec = data[0].time as number;
+      const lastSec = data[data.length - 1].time as number;
+      totalFromSecRef.current = firstSec;
+      totalToSecRef.current = lastSec;
+
+      // Apply initial 4-hour view once when data arrives, unless user already interacted or we already applied
+      if (!appliedInitialWindowRef.current && !userZoomedRef.current) {
+        const lastSec = data[data.length - 1].time as number;
+        const fourHours = 4 * 60 * 60;
         programmaticRangeChangeRef.current = true;
         try {
-          chart.timeScale().fitContent();
+          chart.timeScale().setVisibleRange({ from: (lastSec - fourHours) as UTCTimestamp, to: lastSec as UTCTimestamp });
         } finally {
-          setTimeout(() => { programmaticRangeChangeRef.current = false; }, 0);
+          appliedInitialWindowRef.current = true;
+          setTimeout(() => { programmaticRangeChangeRef.current = false; recomputeZoomState(); }, 0);
+        }
+      } else {
+        // Recompute zoom state after data updates
+        // Avoid thrash: only recompute if user has interacted or we previously applied initial window
+        if (userZoomedRef.current || appliedInitialWindowRef.current) {
+          recomputeZoomState();
         }
       }
     } catch (e) {
@@ -225,7 +280,7 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
       console.error("[Chart] data error", e);
       setChartErr(msg);
     }
-  }, [candles]);
+  }, [candles, recomputeZoomState]);
 
   const hasData = candles.length > 0;
   return (
@@ -242,6 +297,29 @@ function Chart({ candles, height = 320 }: { candles: ReturnType<typeof buildCand
           <div className="rounded-md bg-red-950/70 px-3 py-2 text-sm text-red-200 ring-1 ring-red-800">
             Chart error: {chartErr}
           </div>
+        </div>
+      )}
+      {/* Reset zoom button (hidden in TV mode) */}
+      {hasData && zoomed && !chartErr && !tvMode && (
+        <div className="absolute left-2 top-2 z-10">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md bg-neutral-900/80 px-2 py-1 text-xs text-neutral-200 ring-1 ring-neutral-700 hover:bg-neutral-800"
+            onClick={() => {
+              const c = chartRef.current?.chart;
+              if (!c) return;
+              userZoomedRef.current = false;
+              setZoomed(false);
+              programmaticRangeChangeRef.current = true;
+              try {
+                c.timeScale().fitContent();
+              } finally {
+                setTimeout(() => { programmaticRangeChangeRef.current = false; }, 0);
+              }
+            }}
+          >
+            Reset zoom
+          </button>
         </div>
       )}
     </div>
@@ -268,6 +346,10 @@ function HomeContent() {
   const [pov, setPov] = useState<"YES" | "NO">("YES");
   const delayMs = delaySec * 1000;
   const [tvMode, setTvMode] = useState(false);
+  const [tvHintRender, setTvHintRender] = useState(false);
+  const [tvHintVisible, setTvHintVisible] = useState(false);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   // Auto keep screen awake in TV mode
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const interactionRetryRef = useRef<(() => void) | null>(null);
@@ -329,6 +411,93 @@ function HomeContent() {
       if (s) s.release().catch(() => {});
     };
   }, [tvMode]);
+
+  // TV mode: keyboard shortcut to toggle fullscreen and small hint
+  useEffect(() => {
+    if (!tvMode) return;
+    setTvHintRender(true);
+    setTvHintVisible(true);
+    const hideTimer = setTimeout(() => setTvHintVisible(false), 5000);
+
+    const isFs = () => Boolean(document.fullscreenElement);
+    const toggleFs = async () => {
+      try {
+        if (isFs()) {
+          await document.exitFullscreen?.();
+        } else {
+          await document.documentElement.requestFullscreen?.();
+        }
+      } catch {}
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setTvHintVisible(false);
+        toggleFs();
+      }
+    };
+    const onPointer = () => setTvHintVisible(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointer);
+    return () => {
+      clearTimeout(hideTimer);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointer);
+    };
+  }, [tvMode]);
+
+  // Unmount the hint after fade-out
+  useEffect(() => {
+    if (!tvMode) {
+      setTvHintRender(false);
+      setTvHintVisible(false);
+      return;
+    }
+    if (!tvHintRender) return;
+    if (tvHintVisible) return;
+    const t = setTimeout(() => setTvHintRender(false), 300);
+    return () => clearTimeout(t);
+  }, [tvMode, tvHintRender, tvHintVisible]);
+
+  // Track fullscreen state globally
+  useEffect(() => {
+    const updateFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    updateFs();
+    document.addEventListener("fullscreenchange", updateFs);
+    return () => document.removeEventListener("fullscreenchange", updateFs);
+  }, []);
+
+  // Allow exiting fullscreen with 'F' even when TV mode is off
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key && e.key.toLowerCase() === "f") {
+        if (!tvMode) {
+          e.preventDefault();
+          document.exitFullscreen?.();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen, tvMode]);
+
+  // Global: toggle TV mode with 't' (ignore when typing or with modifiers)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.key || e.key.toLowerCase() !== 't') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = (target?.tagName || '').toLowerCase();
+      const editing = tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+      if (editing) return;
+      e.preventDefault();
+      setTvMode(prev => !prev);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const { seriesYes, seriesNo } = useMarketWS(market?.yesTokenId, market?.noTokenId);
   const [backfillYes, setBackfillYes] = useState<PricePoint[]>([]);
@@ -504,6 +673,14 @@ function HomeContent() {
     })();
   }, [market, tf]);
 
+  // Relative countdown to market end (if available)
+  const endsDeltaMs = useMemo(() => {
+    if (!market?.endDateIso) return null;
+    const t = Date.parse(market.endDateIso);
+    if (Number.isNaN(t)) return null;
+    return t - nowTs;
+  }, [market?.endDateIso, nowTs]);
+
   if (!mounted) {
     return (
       <main className="min-h-screen bg-black text-slate-200">
@@ -535,31 +712,60 @@ function HomeContent() {
           <h1 className={`font-semibold ${tvMode && market ? "text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2" : "text-xl sm:text-2xl"}`}>
             {tvMode && market ? (market.question || "") : "Polymarket Viewer"}
           </h1>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={tvMode}
-              onChange={(e) => setTvMode(e.target.checked)}
-              className="h-4 w-4 accent-neutral-500"
-            />
-            TV mode
-          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={`inline-flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-1.5 text-xs sm:text-sm ring-1 transition ${shareStatus === 'copied' ? 'text-emerald-200 ring-emerald-600' : 'text-neutral-300 ring-neutral-700 hover:ring-neutral-500'}`}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(window.location.href);
+                  setShareStatus('copied');
+                  setTimeout(() => setShareStatus('idle'), 1200);
+                } catch {
+                  setShareStatus('failed');
+                  setTimeout(() => setShareStatus('idle'), 1200);
+                }
+              }}
+              aria-label="Copy shareable link"
+              title="Copy shareable link"
+            >
+              {shareStatus === 'idle' && 'Share'}
+              {shareStatus === 'copied' && '✅ Copied'}
+              {shareStatus === 'failed' && '❌ Failed'}
+            </button>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={tvMode}
+                onChange={(e) => setTvMode(e.target.checked)}
+                className="h-4 w-4 accent-neutral-500"
+              />
+              TV mode
+            </label>
+          </div>
         </div>
-        {!tvMode && (
-        <div className="mt-4 flex items-center gap-3">
-          <input
-            className="flex-1 rounded-md bg-neutral-900 px-3 py-2 outline-none ring-1 ring-neutral-800 focus:ring-indigo-500"
-            placeholder="Paste Polymarket URL (event or market)"
-            value={marketUrl}
-            onChange={(e) => setMarketUrl(e.target.value)}
-          />
-          {resolving && (
-            <span className="inline-flex items-center gap-2 text-xs text-slate-300">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-transparent" />
-              Resolving...
+        {tvMode && tvHintRender && (
+          <div className={`pointer-events-none fixed inset-x-0 top-2 z-50 flex justify-center transition-opacity duration-300 ${tvHintVisible ? "opacity-100" : "opacity-0"}`}>
+            <span className="inline-flex items-center gap-2 rounded-full bg-neutral-900/95 px-3 py-1 text-xs text-neutral-200 ring-1 ring-neutral-700 shadow-lg">
+              Press F to toggle fullscreen
             </span>
-          )}
-        </div>
+          </div>
+        )}
+        {!tvMode && (
+          <div className="mt-4 flex items-center gap-3">
+            <input
+              className="flex-1 rounded-md bg-neutral-900 px-3 py-2 outline-none ring-1 ring-neutral-800 focus:ring-indigo-500"
+              placeholder="Paste Polymarket URL (event or market)"
+              value={marketUrl}
+              onChange={(e) => setMarketUrl(e.target.value)}
+            />
+            {resolving && (
+              <span className="inline-flex items-center gap-2 text-xs text-slate-300">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-transparent" />
+                Resolving...
+              </span>
+            )}
+          </div>
         )}
         {error && (
           <div className="mt-3 rounded-md bg-red-950 text-red-200 px-3 py-2 border border-red-800">{error}</div>
@@ -569,13 +775,56 @@ function HomeContent() {
             {!tvMode && (
               <div className="text-base sm:text-lg md:text-xl text-slate-300 line-clamp-2">{market.question}</div>
             )}
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <div className="text-sm sm:text-base rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-slate-300 flex items-center gap-2">
+            {!tvMode && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 relative pl-3 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-0.5 before:rounded-full before:bg-neutral-700">
+                <div className="flex items-center gap-2 text-sm">
+                  <span>Outcome</span>
+                  <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800 bg-neutral-900">
+                    <button
+                      type="button"
+                      className={`px-4 py-2 text-sm font-semibold ${pov === "YES" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
+                      onClick={() => setPov("YES")}
+                    >
+                      {market?.yesLabel ?? "YES"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-4 py-2 text-sm font-semibold ${pov === "NO" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
+                      onClick={() => setPov("NO")}
+                    >
+                      {market?.noLabel ?? "NO"}
+                    </button>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  Delay
+                  <input type="number" min={0} max={600} className="w-20 rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800" value={delaySec} onChange={(e) => setDelaySec(Number(e.target.value))} />
+                  s
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  Candle size
+                  <select
+                    className="rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800"
+                    value={tf}
+                    onChange={async (e) => {
+                      const v = Number(e.target.value) as TF;
+                      setTf(v);
+                    }}
+                  >
+                    {TIMEFRAME_MINUTES.map((m) => (
+                      <option key={m} value={m}>{m}m</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <div className={`rounded-full bg-neutral-900 ring-1 ring-neutral-800 text-slate-300 flex items-center gap-2 ${tvMode ? "text-base sm:text-lg px-4 py-2" : "text-xs sm:text-sm px-3 py-1.5"}`}>
                 {delaySec === 0 ? (
                   <>
-                    <span aria-hidden="true" className="relative flex h-2.5 w-2.5">
+                    <span aria-hidden="true" className={`relative flex ${tvMode ? "h-3 w-3" : "h-2.5 w-2.5"}`}>
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                      <span className={`relative inline-flex rounded-full bg-emerald-400 ${tvMode ? "h-3 w-3" : "h-2.5 w-2.5"}`} />
                     </span>
                     <span>Live</span>
                   </>
@@ -583,59 +832,56 @@ function HomeContent() {
                   <span>{`Delayed by ${Math.floor(delaySec / 60)}:${String(delaySec % 60).padStart(2, "0")}`}</span>
                 )}
               </div>
-              {!tvMode && (
-              <div className="flex items-center gap-2 text-sm">
-                <span>Outcome</span>
-                <div className="inline-flex overflow-hidden rounded-md ring-1 ring-neutral-800 bg-neutral-900">
-                  <button
-                    type="button"
-                    className={`px-4 py-2 text-sm font-semibold ${pov === "YES" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
-                    onClick={() => setPov("YES")}
-                  >
-                    {market.yesLabel ?? "YES"}
-                  </button>
-                  <button
-                    type="button"
-                    className={`px-4 py-2 text-sm font-semibold ${pov === "NO" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
-                    onClick={() => setPov("NO")}
-                  >
-                    {market.noLabel ?? "NO"}
-                  </button>
+              {!tvMode && endsDeltaMs != null && (
+                <div className="text-xs sm:text-sm rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-neutral-400">
+                  {endsDeltaMs > 0 ? `Ends in ${formatDuration(endsDeltaMs)}` : `Ended ${formatDuration(-endsDeltaMs)} ago`}
                 </div>
-              </div>
               )}
-              {!tvMode && (
-              <label className="flex items-center gap-2 text-sm">
-                Delay
-                <input type="range" min={0} max={600} value={delaySec} onChange={(e) => setDelaySec(Number(e.target.value))} />
-                <input type="number" min={0} max={600} className="w-20 rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800" value={delaySec} onChange={(e) => setDelaySec(Number(e.target.value))} />
-                s
-              </label>
-              )}
-              {!tvMode && (
-              <label className="flex items-center gap-2 text-sm">
-                Timeframe
-                <select
-                  className="rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800"
-                  value={tf}
-                  onChange={async (e) => {
-                    const v = Number(e.target.value) as TF;
-                    setTf(v);
-                  }}
+              {!tvMode && market?.slug && (
+                <a
+                  href={`https://polymarket.com/market/${market.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs sm:text-sm inline-flex items-center gap-1 rounded-full bg-neutral-900 px-3 py-1.5 ring-1 ring-neutral-800 text-neutral-300 hover:ring-neutral-600"
                 >
-                  {TIMEFRAME_MINUTES.map((m) => (
-                    <option key={m} value={m}>{m}m</option>
-                  ))}
-                </select>
-              </label>
+                  Open on Polymarket
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3z" />
+                    <path d="M5 5h6v2H7v10h10v-4h2v6H5z" />
+                  </svg>
+                </a>
               )}
             </div>
-
-            <BigPercent series={activeSeries} nowTs={nowTs} delayMs={delayMs} label={pov === "YES" ? market.yesLabel : market.noLabel} tvMode={tvMode} />
-
+            <BigPercent series={activeSeries} nowTs={nowTs} delayMs={delayMs} label={pov === "YES" ? market?.yesLabel : market?.noLabel} tvMode={tvMode} />
             <div className="mt-4">
-              <Chart candles={candles} height={tvMode ? 480 : 360} />
+              <Chart candles={candles} height={tvMode ? 480 : 360} tvMode={tvMode} />
             </div>
+          </div>
+        )}
+        {!tvMode && (
+          <div className="mt-10 border-t border-neutral-800 pt-6 text-center">
+            <div className="text-sm sm:text-base text-neutral-400">
+              Made with <span role="img" aria-label="love" className="mx-1">❤️</span> by{' '}
+              <a
+                href="https://dylanwheeler.net"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-neutral-200 underline underline-offset-4 decoration-neutral-700 hover:decoration-neutral-400"
+              >
+                Dylan
+              </a>
+            </div>
+            <a
+              href="https://github.com/Confiqure/polymarket-viewer"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-2 rounded-full bg-neutral-900 px-3 py-1.5 text-xs sm:text-sm text-neutral-300 ring-1 ring-neutral-700 hover:ring-neutral-500"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                <path d="M12 .5C5.73.5.95 5.28.95 11.55c0 4.86 3.16 8.98 7.55 10.43.55.1.75-.24.75-.53 0-.26-.01-1.13-.02-2.05-3.07.67-3.72-1.31-3.72-1.31-.5-1.27-1.22-1.61-1.22-1.61-.99-.68.07-.66.07-.66 1.09.08 1.66 1.12 1.66 1.12.97 1.65 2.54 1.18 3.16.9.1-.7.38-1.18.69-1.45-2.45-.28-5.02-1.23-5.02-5.48 0-1.21.43-2.19 1.12-2.96-.11-.28-.49-1.41.11-2.93 0 0 .92-.29 3.02 1.13a10.5 10.5 0 0 1 2.75-.37c.93 0 1.86.12 2.75.37 2.1-1.42 3.02-1.13 3.02-1.13.6 1.52.22 2.65.11 2.93.69.77 1.12 1.75 1.12 2.96 0 4.26-2.58 5.2-5.04 5.47.39.34.73 1.01.73 2.04 0 1.47-.01 2.65-.01 3.01 0 .29.2.64.75.53 4.39-1.45 7.55-5.57 7.55-10.43C23.05 5.28 18.27.5 12 .5z" />
+              </svg>
+              View source on GitHub
+            </a>
           </div>
         )}
       </div>
