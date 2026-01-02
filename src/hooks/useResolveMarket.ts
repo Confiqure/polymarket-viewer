@@ -3,13 +3,40 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MarketRef } from "@/lib/types";
 import { resolveMarket as svcResolveMarket } from "@/services/polymarket";
 
-function isLikelyUrl(u: string) {
+function isAbsoluteHttpUrl(u: string) {
   try {
     const parsed = new URL(u);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
   } catch {
     return false;
   }
+}
+
+function normalizePolymarketInput(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (isAbsoluteHttpUrl(s)) return s;
+
+  // Strip surrounding quotes accidentally pasted
+  const unquoted = s.replace(/^"|"$/g, "");
+
+  // Starts with domain but no protocol
+  if (/^(www\.)?polymarket\.com/i.test(unquoted)) {
+    return `https://${unquoted.replace(/^www\./i, "")}`;
+  }
+
+  // Starts with path only
+  if (/^(?:\/)?(market|event)\//i.test(unquoted)) {
+    const path = unquoted.replace(/^\/+/, "");
+    return `https://polymarket.com/${path}`;
+  }
+
+  // Likely a slug (letters, numbers, dashes/underscores) — default to market
+  if (/^[a-z0-9][a-z0-9-_]{3,}$/i.test(unquoted)) {
+    return `https://polymarket.com/market/${unquoted}`;
+  }
+
+  return null;
 }
 
 export function useResolveMarket({
@@ -30,7 +57,9 @@ export function useResolveMarket({
   const resolveNow = useCallback(
     async (u?: string) => {
       setError(null);
-      const target = (u ?? marketUrl).trim();
+      const raw = (u ?? marketUrl).trim();
+      if (!raw) return;
+      const target = normalizePolymarketInput(raw);
       if (!target) return;
       try {
         setResolving(true);
@@ -51,13 +80,15 @@ export function useResolveMarket({
   // Auto-resolve when the input URL changes (debounced)
   useEffect(() => {
     if (!enabled) return;
-    const target = marketUrl.trim();
-    if (!target) return;
-    if (!isLikelyUrl(target)) return; // avoid 500 from /api/resolve on non-URL text
-    if (target === lastResolvedRef.current) return;
+    const raw = marketUrl.trim();
+    if (!raw) return;
+    const normalized = normalizePolymarketInput(raw);
+    if (!normalized) return; // ignore clearly invalid inputs
+    if (normalized === lastResolvedRef.current) return;
     const id = setTimeout(() => {
-      if (marketUrl.trim() === target && target !== lastResolvedRef.current) {
-        resolveNow(target);
+      // Ensure the input didn't change during debounce
+      if (marketUrl.trim() === raw && normalized !== lastResolvedRef.current) {
+        resolveNow(normalized);
       }
     }, debounceMs);
     return () => clearTimeout(id);

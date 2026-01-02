@@ -38,7 +38,7 @@ export function BigPercent({
       </div>
     );
   }
-  const pct = (pt.p * 100).toFixed(1);
+  const pct = Math.round(pt.p * 100);
   return (
     <div className="my-6 text-center">
       <div className={`font-extrabold tracking-tight ${tvMode ? "text-[clamp(3rem,10vw,10rem)]" : "text-7xl"}`}>
