@@ -53,29 +53,33 @@ export function useResolveMarket({
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastResolvedRef = useRef<string>("");
+  const onResolvedRef = useRef(onResolved);
+  const marketUrlRef = useRef(marketUrl);
 
-  const resolveNow = useCallback(
-    async (u?: string) => {
-      setError(null);
-      const raw = (u ?? marketUrl).trim();
-      if (!raw) return;
-      const target = normalizePolymarketInput(raw);
-      if (!target) return;
-      try {
-        setResolving(true);
-        const m = await svcResolveMarket(target);
-        onResolved(m, target);
-        lastResolvedRef.current = target;
-      } catch (e: unknown) {
-        let message = "Failed to resolve market";
-        if (e instanceof Error) message = e.message;
-        setError(message);
-      } finally {
-        setResolving(false);
-      }
-    },
-    [marketUrl, onResolved],
-  );
+  useEffect(() => {
+    onResolvedRef.current = onResolved;
+    marketUrlRef.current = marketUrl;
+  }, [onResolved, marketUrl]);
+
+  const resolveNow = useCallback(async (u?: string) => {
+    setError(null);
+    const raw = (u ?? marketUrlRef.current).trim();
+    if (!raw) return;
+    const target = normalizePolymarketInput(raw);
+    if (!target) return;
+    try {
+      setResolving(true);
+      const m = await svcResolveMarket(target);
+      onResolvedRef.current(m, target);
+      lastResolvedRef.current = target;
+    } catch (e: unknown) {
+      let message = "Failed to resolve market";
+      if (e instanceof Error) message = e.message;
+      setError(message);
+    } finally {
+      setResolving(false);
+    }
+  }, []);
 
   // Auto-resolve when the input URL changes (debounced)
   useEffect(() => {

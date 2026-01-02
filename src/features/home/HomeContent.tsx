@@ -28,6 +28,7 @@ export default function HomeContent() {
   const [pov, setPov] = useState<"YES" | "NO">("YES");
   const delayMs = delaySec * 1000;
   const [tvMode, setTvMode] = useState(false);
+  const [showMidpoint, setShowMidpoint] = useState(true);
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "failed">("idle");
   useWakeLock(tvMode);
   const { tvHintRender, tvHintVisible } = useTvShortcuts(tvMode, setTvMode);
@@ -41,13 +42,10 @@ export default function HomeContent() {
   const { resolving, error, resolveNow } = useResolveMarket({
     marketUrl,
     enabled: mounted,
-    onResolved: (m, resolvedUrl) => {
+    onResolved: (m) => {
       setMarket(m);
-      lastResolvedRef.current = resolvedUrl;
     },
   });
-
-  const lastResolvedRef = useRef<string>("");
 
   // Sync state from URL params
   useEffect(() => {
@@ -77,6 +75,12 @@ export default function HomeContent() {
     const mode = (qs.get("mode") ?? "").toLowerCase();
     const tv = mode === "tv" || mode === "1" || mode === "true";
     setTvMode((prev) => (prev !== tv ? tv : prev));
+
+    const midStr = qs.get("mid");
+    if (midStr !== null) {
+      const show = midStr === "1" || midStr === "true";
+      setShowMidpoint((prev) => (prev !== show ? show : prev));
+    }
   }, [mounted, currentQS]);
 
   // Push state to URL params (without reload)
@@ -86,11 +90,22 @@ export default function HomeContent() {
     const prevUrl = params.get("url") ?? "";
     if (marketUrl) params.set("url", marketUrl);
     else params.delete("url");
-    params.set("delay", String(delaySec));
-    params.set("tf", String(tf));
-    params.set("pov", pov.toLowerCase());
+
+    if (delaySec !== 30) params.set("delay", String(delaySec));
+    else params.delete("delay");
+
+    if (tf !== 5) params.set("tf", String(tf));
+    else params.delete("tf");
+
+    if (pov !== "YES") params.set("pov", pov.toLowerCase());
+    else params.delete("pov");
+
     if (tvMode) params.set("mode", "tv");
     else params.delete("mode");
+
+    if (showMidpoint) params.delete("mid");
+    else params.set("mid", "0");
+
     const next = params.toString();
     const current = currentQS;
     if (next !== current) {
@@ -100,7 +115,7 @@ export default function HomeContent() {
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, pathname, router, currentQS]);
+  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, showMidpoint, pathname, router, currentQS]);
 
   // Autoload market if URL contains one
   const autoLoadedRef = useRef(false);
@@ -191,6 +206,8 @@ export default function HomeContent() {
               onDelayChange={setDelaySec}
               tf={tf}
               onTfChange={setTf}
+              showMidpoint={showMidpoint}
+              onShowMidpointChange={setShowMidpoint}
             />
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <StatusBadge delaySec={delaySec} tvMode={tvMode} />
@@ -198,7 +215,12 @@ export default function HomeContent() {
                 <div className="rounded-full bg-neutral-900 px-3 py-1.5 text-xs text-neutral-400 ring-1 ring-neutral-800 sm:text-sm">
                   {(() => {
                     if (market?.endDateIso) {
-                      const t = Date.parse(market.endDateIso);
+                      let iso = market.endDateIso;
+                      // If YYYY-MM-DD, assume end of day (UTC)
+                      if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+                        iso = `${iso}T23:59:59Z`;
+                      }
+                      const t = Date.parse(iso);
                       if (!Number.isNaN(t)) {
                         const d = t - nowTs;
                         return d > 0 ? `Ends in ${formatDuration(d)}` : `Ended ${formatDuration(-d)} ago`;
@@ -231,7 +253,7 @@ export default function HomeContent() {
               tvMode={tvMode}
             />
             <div className="mt-4">
-              <Chart candles={candles} height={tvMode ? 480 : 360} tvMode={tvMode} />
+              <Chart candles={candles} height={tvMode ? 480 : 360} tvMode={tvMode} showMidpoint={showMidpoint} />
             </div>
           </div>
         )}

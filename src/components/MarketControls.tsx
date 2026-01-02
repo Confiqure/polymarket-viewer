@@ -12,6 +12,8 @@ export function MarketControls({
   onDelayChange,
   tf,
   onTfChange,
+  showMidpoint,
+  onShowMidpointChange,
 }: {
   tvMode: boolean;
   pov: "YES" | "NO";
@@ -22,6 +24,8 @@ export function MarketControls({
   onDelayChange: (v: number) => void;
   tf: TF;
   onTfChange: (v: TF) => void;
+  showMidpoint: boolean;
+  onShowMidpointChange: (v: boolean) => void;
 }) {
   if (tvMode) return null;
   return (
@@ -70,6 +74,15 @@ export function MarketControls({
             </option>
           ))}
         </select>
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={showMidpoint}
+          onChange={(e) => onShowMidpointChange(e.target.checked)}
+          className="h-4 w-4 accent-neutral-500"
+        />
+        Midpoint
       </label>
     </div>
   );

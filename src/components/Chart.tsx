@@ -4,10 +4,12 @@ import {
   createChart,
   CrosshairMode,
   CandlestickSeries,
+  LineSeries,
   type ISeriesApi,
   type CandlestickData,
   type UTCTimestamp,
   type IChartApi,
+  TickMarkType,
 } from "lightweight-charts";
 import type { Candle as CandleType } from "@/lib/types";
 
@@ -15,13 +17,19 @@ export function Chart({
   candles,
   height = 320,
   tvMode = false,
+  showMidpoint = true,
 }: {
   candles: Array<CandleType>;
   height?: number;
   tvMode?: boolean;
+  showMidpoint?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<{ chart: IChartApi; series: ISeriesApi<"Candlestick"> } | null>(null);
+  const chartRef = useRef<{
+    chart: IChartApi;
+    series: ISeriesApi<"Candlestick">;
+    midpointSeries: ISeriesApi<"Line">;
+  } | null>(null);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const userZoomedRef = useRef(false);
@@ -81,12 +89,36 @@ export function Chart({
           height,
           layout: { textColor: "#cbd5e1", background: { color: "transparent" } },
           rightPriceScale: { borderVisible: false },
-          timeScale: { borderVisible: false },
+          timeScale: {
+            borderVisible: false,
+            timeVisible: true,
+            secondsVisible: false,
+            tickMarkFormatter: (time: number, tickMarkType: TickMarkType, locale: string) => {
+              const date = new Date(time * 1000);
+              switch (tickMarkType) {
+                case TickMarkType.Year:
+                  return date.getFullYear().toString();
+                case TickMarkType.Month:
+                  return date.toLocaleDateString(locale, { month: "short" });
+                case TickMarkType.DayOfMonth:
+                  return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
+                case TickMarkType.Time:
+                  return date.toLocaleTimeString(locale, { hour: "numeric", minute: "numeric" });
+                case TickMarkType.TimeWithSeconds:
+                  return date.toLocaleTimeString(locale, { hour: "numeric", minute: "numeric", second: "numeric" });
+                default:
+                  return "";
+              }
+            },
+          },
+          localization: { timeFormatter: (t: number) => new Date(t * 1000).toLocaleString() },
           crosshair: { mode: CrosshairMode.Magnet },
           grid: { horzLines: { color: "#1f2937" }, vertLines: { color: "#1f2937" } },
         });
         // Official v5 API: supply series definition constant first argument
-        type ChartWithAdd = IChartApi & { addSeries: (def: unknown, opts?: unknown) => ISeriesApi<"Candlestick"> };
+        type ChartWithAdd = IChartApi & {
+          addSeries: <T extends "Candlestick" | "Line">(def: unknown, opts?: unknown) => ISeriesApi<T>;
+        };
         const cwa = chart as ChartWithAdd;
         if (typeof cwa.addSeries !== "function") {
           throw new Error("lightweight-charts addSeries API unavailable");
@@ -97,7 +129,18 @@ export function Chart({
           wickUpColor: "#10b981",
           wickDownColor: "#ef4444",
           borderVisible: false,
-        });
+        }) as ISeriesApi<"Candlestick">;
+
+        // Add midpoint line series
+        const midpointSeries = cwa.addSeries(LineSeries, {
+          color: "#64748b", // slate-500
+          lineWidth: 1,
+          lineStyle: 2, // Dashed
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        }) as ISeriesApi<"Line">;
+
         // Nudge view slightly so last candle isn't flush with edge
         chart.timeScale().applyOptions({ rightOffset: 5 });
 
@@ -111,7 +154,7 @@ export function Chart({
         };
         ts.subscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
 
-        chartRef.current = { chart, series };
+        chartRef.current = { chart, series, midpointSeries };
         return () => {
           try {
             ts.unsubscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
@@ -134,7 +177,7 @@ export function Chart({
   useEffect(() => {
     if (!chartRef.current) return;
     try {
-      const { series, chart } = chartRef.current;
+      const { series, midpointSeries, chart } = chartRef.current;
       const mapped: CandlestickData<UTCTimestamp>[] = candles.map((c: CandleType) => ({
         time: Math.floor(c.t / 1000) as UTCTimestamp,
         open: c.open,
@@ -163,6 +206,17 @@ export function Chart({
       }
 
       series.setData(data);
+
+      // Update midpoint series
+      if (showMidpoint) {
+        const midpointData = data.map((d) => ({
+          time: d.time,
+          value: 0.5,
+        }));
+        midpointSeries.setData(midpointData);
+      } else {
+        midpointSeries.setData([]);
+      }
 
       // Cache total bounds for stable comparisons
       const firstSec = data[0].time as number;
@@ -196,7 +250,7 @@ export function Chart({
       console.error("[Chart] data error", e);
       setChartErr(msg);
     }
-  }, [candles, recomputeZoomState]);
+  }, [candles, recomputeZoomState, showMidpoint]);
 
   const hasData = candles.length > 0;
   return (
