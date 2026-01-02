@@ -5,8 +5,9 @@ import type { Candle, PricePoint } from "./types";
 // - intervalMs > 0
 // Enhancements over naive version:
 //   * If first trade in a bucket isn't at exact bucket start, we still derive OPEN from first trade inside bucket.
-//   * If there is a gap (no trades) between buckets we create a synthetic doji candle that carries forward last close
-//     so the chart shows continuity rather than temporal holes (optional: enabled by default via fillGaps).
+//   * If there is a gap (no trades) between buckets we create a synthetic doji candle that carries forward last close.
+//   * We "stitch" candles together: if a new candle's open doesn't match the previous close, we adjust the open
+//     (and high/low) to match, ensuring a continuous chart without visual gaps.
 //   * Buckets returned sorted by time.
 export function buildCandles(points: PricePoint[], intervalMs: number, opts?: { fillGaps?: boolean }): Candle[] {
   if (!intervalMs || intervalMs <= 0) return [];
@@ -30,12 +31,27 @@ export function buildCandles(points: PricePoint[], intervalMs: number, opts?: { 
   }
   const candles = Array.from(bucketMap.values()).sort((a, b) => a.t - b.t);
   if (!fillGaps || candles.length === 0) return candles;
-  // Fill any missing buckets with synthetic flat candles
+
+  // Fill any missing buckets with synthetic flat candles AND stitch opens to previous closes
   const filled: Candle[] = [];
+
+  const pushStitched = (c: Candle) => {
+    if (filled.length > 0) {
+      const prev = filled[filled.length - 1];
+      if (c.open !== prev.close) {
+        c.open = prev.close;
+        c.high = Math.max(c.high, c.open);
+        c.low = Math.min(c.low, c.open);
+      }
+    }
+    filled.push(c);
+  };
+
   for (let i = 0; i < candles.length; i++) {
-    filled.push(candles[i]);
+    pushStitched({ ...candles[i] });
+
     if (i === candles.length - 1) break;
-    const cur = candles[i];
+    const cur = filled[filled.length - 1];
     const next = candles[i + 1];
     let expected = cur.t + intervalMs;
     while (expected < next.t) {

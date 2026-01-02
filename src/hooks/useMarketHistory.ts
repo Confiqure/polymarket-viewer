@@ -2,9 +2,8 @@
 import { useEffect, useState } from "react";
 import type { MarketRef, PricePoint } from "@/lib/types";
 import { fetchHistory } from "@/services/polymarket";
-import type { TF } from "@/lib/timeframes";
 
-export function useMarketHistory(market: MarketRef | null, _tf: TF) {
+export function useMarketHistory(market: MarketRef | null) {
   const [backfillYes, setBackfillYes] = useState<PricePoint[]>([]);
   const [backfillNo, setBackfillNo] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,7 +47,7 @@ export function useMarketHistory(market: MarketRef | null, _tf: TF) {
     return () => {
       cancelled = true;
     };
-  }, [market, _tf]);
+  }, [market]);
 
   return { backfillYes, backfillNo, loading, error } as const;
 }

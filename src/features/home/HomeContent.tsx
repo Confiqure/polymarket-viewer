@@ -33,7 +33,7 @@ export default function HomeContent() {
   const { tvHintRender, tvHintVisible } = useTvShortcuts(tvMode, setTvMode);
 
   const { seriesYes, seriesNo } = useMarketWS(market?.yesTokenId, market?.noTokenId);
-  const { backfillYes, backfillNo } = useMarketHistory(market, tf);
+  const { backfillYes, backfillNo } = useMarketHistory(market);
   const activeSeries = pov === "YES" ? seriesYes : seriesNo;
   const activeBackfill = pov === "YES" ? backfillYes : backfillNo;
   const candles = useCandles(activeSeries, activeBackfill, nowTs, delayMs, tf);
