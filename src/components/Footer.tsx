@@ -1,15 +1,9 @@
 import React from "react";
 
-interface FooterProps {
-  tvMode?: boolean;
-}
-
-const Footer = ({ tvMode }: FooterProps) => {
+const Footer = () => {
   const commitHash = process.env.NEXT_PUBLIC_COMMIT_HASH || "unknown";
   const shortHash = commitHash.slice(0, 7);
   const repoUrl = "https://github.com/Confiqure/polymarket-viewer";
-
-  if (tvMode) return null;
 
   return (
     <footer className="mt-10 border-t border-neutral-800 bg-black pt-6 pb-12 text-center">

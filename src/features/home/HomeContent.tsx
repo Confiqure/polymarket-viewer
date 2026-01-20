@@ -6,7 +6,7 @@ import { useMarketWS } from "@/lib/useMarketWS";
 import { TIMEFRAME_SET, type TF } from "@/lib/timeframes";
 import { formatDuration } from "@/lib/format";
 import { useCandles, useWakeLock, useTvShortcuts, useMarketHistory, useResolveMarket } from "@/hooks";
-import { Chart, BigPercent, Header, MarketControls, StatusBadge, TVHint, Footer } from "@/components";
+import { Chart, OddsDisplay, Header, MarketControls, StatusBadge, TVHint, Footer } from "@/components";
 
 export default function HomeContent() {
   const router = useRouter();
@@ -29,9 +29,10 @@ export default function HomeContent() {
   const delayMs = delaySec * 1000;
   const [tvMode, setTvMode] = useState(false);
   const [showMidpoint, setShowMidpoint] = useState(true);
+  const [displayFormat, setDisplayFormat] = useState<"percent" | "moneyline">("percent");
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "failed">("idle");
   useWakeLock(tvMode);
-  const { tvHintRender, tvHintVisible } = useTvShortcuts(tvMode, setTvMode);
+  const { tvHintRender, tvHintVisible } = useTvShortcuts(tvMode, setTvMode, setDisplayFormat);
 
   const { seriesYes, seriesNo } = useMarketWS(market?.yesTokenId, market?.noTokenId);
   const { backfillYes, backfillNo } = useMarketHistory(market);
@@ -81,6 +82,11 @@ export default function HomeContent() {
       const show = midStr === "1" || midStr === "true";
       setShowMidpoint((prev) => (prev !== show ? show : prev));
     }
+
+    const disp = qs.get("display")?.toLowerCase();
+    if (disp === "percent" || disp === "moneyline") {
+      setDisplayFormat((prev) => (prev !== disp ? disp : prev));
+    }
   }, [mounted, currentQS]);
 
   // Push state to URL params (without reload)
@@ -106,6 +112,9 @@ export default function HomeContent() {
     if (showMidpoint) params.delete("mid");
     else params.set("mid", "0");
 
+    if (displayFormat !== "percent") params.set("display", displayFormat);
+    else params.delete("display");
+
     const next = params.toString();
     const current = currentQS;
     if (next !== current) {
@@ -115,7 +124,7 @@ export default function HomeContent() {
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, showMidpoint, pathname, router, currentQS]);
+  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, showMidpoint, displayFormat, pathname, router, currentQS]);
 
   // Autoload market if URL contains one
   const autoLoadedRef = useRef(false);
@@ -257,7 +266,7 @@ export default function HomeContent() {
             </div>
           </div>
         )}
-        <Footer tvMode={tvMode} />
+        {!tvMode && <Footer />}
       </div>
     </main>
   );

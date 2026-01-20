@@ -1,18 +1,29 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
-export function useTvShortcuts(tvMode: boolean, setTvMode: (v: boolean) => void) {
+export function useTvShortcuts(
+  tvMode: boolean,
+  setTvMode: Dispatch<SetStateAction<boolean>>,
+  setDisplayFormat?: Dispatch<SetStateAction<"percent" | "moneyline">>,
+) {
   const [tvHintRender, setTvHintRender] = useState(false);
   const [tvHintVisible, setTvHintVisible] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // TV mode: keyboard shortcut to toggle fullscreen and small hint
+  // TV mode hint animation lifecycle
   useEffect(() => {
-    if (!tvMode) return;
+    if (!tvMode) {
+      setTvHintVisible(false);
+      setTvHintRender(false);
+      return;
+    }
+
     setTvHintRender(true);
     setTvHintVisible(true);
+
     const hideTimer = setTimeout(() => setTvHintVisible(false), 5000);
     const onPointer = () => setTvHintVisible(false);
+
     window.addEventListener("pointerdown", onPointer);
     return () => {
       clearTimeout(hideTimer);
@@ -20,18 +31,13 @@ export function useTvShortcuts(tvMode: boolean, setTvMode: (v: boolean) => void)
     };
   }, [tvMode]);
 
-  // Unmount the hint after fade-out
+  // Handle hint unmounting after fade-out
   useEffect(() => {
-    if (!tvMode) {
-      setTvHintRender(false);
-      setTvHintVisible(false);
-      return;
+    if (tvMode && !tvHintVisible && tvHintRender) {
+      const timer = setTimeout(() => setTvHintRender(false), 300);
+      return () => clearTimeout(timer);
     }
-    if (!tvHintRender) return;
-    if (tvHintVisible) return;
-    const t = setTimeout(() => setTvHintRender(false), 300);
-    return () => clearTimeout(t);
-  }, [tvMode, tvHintRender, tvHintVisible]);
+  }, [tvMode, tvHintVisible, tvHintRender]);
 
   // Track fullscreen state globally
   useEffect(() => {
@@ -41,43 +47,41 @@ export function useTvShortcuts(tvMode: boolean, setTvMode: (v: boolean) => void)
     return () => document.removeEventListener("fullscreenchange", updateFs);
   }, []);
 
-  // Global: toggle Fullscreen with 'f' (ignore when typing or with modifiers)
+  // Global keyboard shortcuts: 'f' (fullscreen), 't' (TV mode), 'm' (format)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.key || e.key.toLowerCase() !== "f") return;
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      const target = e.target as HTMLElement | null;
-      const tag = (target?.tagName || "").toLowerCase();
-      const editing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
-      if (editing) return;
-      e.preventDefault();
-      if (document.fullscreenElement) {
-        document.exitFullscreen?.();
-      } else {
-        document.documentElement.requestFullscreen?.();
-      }
-      // If TV mode hint is visible, hide it after using the shortcut
-      if (tvMode) setTvHintVisible(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [tvMode]);
+      if (!e.key || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 
-  // Global: toggle TV mode with 't' (ignore when typing or with modifiers)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.key || e.key.toLowerCase() !== "t") return;
-      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       const target = e.target as HTMLElement | null;
-      const tag = (target?.tagName || "").toLowerCase();
-      const editing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
-      if (editing) return;
-      e.preventDefault();
-      setTvMode(!tvMode);
+      const isEditing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable;
+
+      if (isEditing) return;
+
+      const key = e.key.toLowerCase();
+      if (key === "f") {
+        e.preventDefault();
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.();
+        } else {
+          document.documentElement.requestFullscreen?.();
+        }
+        setTvHintVisible(false);
+      } else if (key === "t") {
+        e.preventDefault();
+        setTvMode((prev) => !prev);
+      } else if (key === "m" && setDisplayFormat) {
+        e.preventDefault();
+        setDisplayFormat((prev) => (prev === "percent" ? "moneyline" : "percent"));
+      }
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tvMode, setTvMode]);
+  }, [setTvMode, setDisplayFormat]);
 
   return { tvHintRender, tvHintVisible, isFullscreen };
 }

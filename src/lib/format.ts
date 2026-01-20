@@ -17,3 +17,18 @@ export function formatDuration(ms: number): string {
   if (h) return parts.slice(0, 3).join(" ");
   return parts.slice(Math.max(0, parts.length - 2)).join(" ");
 }
+
+export function formatMoneyline(p: number): string {
+  if (p <= 0 || p >= 1) return "—";
+  if (p > 0.5) {
+    const american = -100 * (p / (1 - p));
+    return Math.round(american).toString();
+  } else {
+    const american = 100 * ((1 - p) / p);
+    return `+${Math.round(american)}`;
+  }
+}
+
+export function formatPercent(p: number): string {
+  return `${Math.round(p * 100)}%`;
+}
