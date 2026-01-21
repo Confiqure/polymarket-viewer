@@ -32,6 +32,7 @@ export function Chart({
   } | null>(null);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
   const userZoomedRef = useRef(false);
   const programmaticRangeChangeRef = useRef(false);
   const [zoomed, setZoomed] = useState(false);
@@ -66,12 +67,16 @@ export function Chart({
     const ro = new ResizeObserver((entries) => {
       const cr = entries[0]?.contentRect;
       const w = Math.floor((cr?.width ?? el.clientWidth) || 0);
+      const h = Math.floor((cr?.height ?? el.clientHeight) || 0);
       setContainerWidth(w);
+      setContainerHeight(h);
     });
     ro.observe(el);
-    // Seed initial width
+    // Seed initial size
     const initialW = Math.floor(el.clientWidth || 0);
+    const initialH = Math.floor(el.clientHeight || 0);
     if (initialW) setContainerWidth(initialW);
+    if (initialH) setContainerHeight(initialH);
     return () => ro.disconnect();
   }, []);
 
@@ -81,12 +86,13 @@ export function Chart({
     try {
       const el = ref.current;
       if (!el) return;
-      if (containerWidth <= 0 || height <= 0) return;
+      const targetHeight = tvMode ? containerHeight : height;
+      if (containerWidth <= 0 || targetHeight <= 0) return;
 
       if (!chartRef.current) {
         const chart = createChart(el, {
           width: containerWidth,
-          height,
+          height: targetHeight,
           layout: { textColor: "#cbd5e1", background: { color: "transparent" } },
           rightPriceScale: { borderVisible: false },
           timeScale: {
@@ -164,14 +170,14 @@ export function Chart({
         };
       }
 
-      chartRef.current.chart.applyOptions({ width: containerWidth, height });
+      chartRef.current.chart.applyOptions({ width: containerWidth, height: targetHeight });
       requestAnimationFrame(() => recomputeZoomState());
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Chart init failed";
       console.error("[Chart] init error", e);
       setChartErr(msg);
     }
-  }, [containerWidth, height, recomputeZoomState]);
+  }, [containerWidth, containerHeight, height, tvMode, recomputeZoomState]);
 
   // Set data on changes
   useEffect(() => {
@@ -254,7 +260,11 @@ export function Chart({
 
   const hasData = candles.length > 0;
   return (
-    <div ref={ref} className="relative w-full rounded-lg border border-neutral-800" style={{ height }}>
+    <div
+      ref={ref}
+      className={`relative w-full rounded-lg border border-neutral-800 ${tvMode ? "h-full" : ""}`}
+      style={!tvMode ? { height } : undefined}
+    >
       {!hasData && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-md bg-black/60 px-3 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800">

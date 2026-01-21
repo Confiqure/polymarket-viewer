@@ -6,7 +6,7 @@ import { useMarketWS } from "@/lib/useMarketWS";
 import { TIMEFRAME_SET, type TF } from "@/lib/timeframes";
 import { formatDuration } from "@/lib/format";
 import { useCandles, useWakeLock, useTvShortcuts, useMarketHistory, useResolveMarket } from "@/hooks";
-import { Chart, OddsDisplay, Header, MarketControls, StatusBadge, TVHint, Footer } from "@/components";
+import { Chart, OddsDisplay, Header, MarketControls, StatusBadge, TVHint, Footer, VerticalResizer } from "@/components";
 
 export default function HomeContent() {
   const router = useRouter();
@@ -31,6 +31,7 @@ export default function HomeContent() {
   const [showMidpoint, setShowMidpoint] = useState(true);
   const [displayFormat, setDisplayFormat] = useState<"percent" | "moneyline">("percent");
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [split, setSplit] = useState(45);
   useWakeLock(tvMode);
   const { tvHintRender, tvHintVisible } = useTvShortcuts(tvMode, setTvMode, setDisplayFormat);
 
@@ -87,6 +88,13 @@ export default function HomeContent() {
     if (disp === "percent" || disp === "moneyline") {
       setDisplayFormat((prev) => (prev !== disp ? disp : prev));
     }
+
+    const sStr = qs.get("split");
+    const s = sStr != null ? Number.parseFloat(sStr) : NaN;
+    if (!Number.isNaN(s)) {
+      const clamped = Math.max(20, Math.min(80, s));
+      setSplit((prev) => (prev !== clamped ? clamped : prev));
+    }
   }, [mounted, currentQS]);
 
   // Push state to URL params (without reload)
@@ -115,6 +123,9 @@ export default function HomeContent() {
     if (displayFormat !== "percent") params.set("display", displayFormat);
     else params.delete("display");
 
+    if (Math.round(split) !== 45) params.set("split", Math.round(split).toString());
+    else params.delete("split");
+
     const next = params.toString();
     const current = currentQS;
     if (next !== current) {
@@ -124,7 +135,7 @@ export default function HomeContent() {
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, showMidpoint, displayFormat, pathname, router, currentQS]);
+  }, [mounted, marketUrl, delaySec, tf, pov, tvMode, showMidpoint, displayFormat, split, pathname, router, currentQS]);
 
   // Autoload market if URL contains one
   const autoLoadedRef = useRef(false);
@@ -163,8 +174,8 @@ export default function HomeContent() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-slate-200">
-      <div className={`mx-auto ${tvMode ? "max-w-6xl" : "max-w-4xl"} px-4 py-6`}>
+    <main className={`bg-black text-slate-200 ${tvMode ? "h-screen overflow-hidden" : "min-h-screen"}`}>
+      <div className={`mx-auto px-4 ${tvMode ? "flex h-full max-w-6xl flex-col py-2" : "max-w-4xl py-6"}`}>
         <Header
           title={tvMode && market ? market.question || "" : "Polymarket Viewer"}
           compact={Boolean(tvMode && market)}
@@ -201,7 +212,7 @@ export default function HomeContent() {
           </div>
         )}
         {market && (
-          <div className="mt-4">
+          <div className={tvMode ? "mt-2 flex min-h-0 flex-1 flex-col" : "mt-4"}>
             {!tvMode && (
               <div className="line-clamp-2 text-base text-slate-300 sm:text-lg md:text-xl">{market.question}</div>
             )}
@@ -254,15 +265,26 @@ export default function HomeContent() {
                 </a>
               )}
             </div>
-            <BigPercent
-              series={activeSeries}
-              nowTs={nowTs}
-              delayMs={delayMs}
-              label={pov === "YES" ? market?.yesLabel : market?.noLabel}
-              tvMode={tvMode}
-            />
-            <div className="mt-4">
-              <Chart candles={candles} height={tvMode ? 480 : 360} tvMode={tvMode} showMidpoint={showMidpoint} />
+            {/* Split container for TV mode */}
+            <div className={tvMode ? "flex min-h-0 flex-1 flex-col py-4" : ""}>
+              <div
+                className={tvMode ? "flex min-h-0 flex-col justify-center" : ""}
+                style={tvMode ? { flex: 100 - split } : undefined}
+              >
+                <OddsDisplay
+                  series={activeSeries}
+                  nowTs={nowTs}
+                  delayMs={delayMs}
+                  label={pov === "YES" ? market?.yesLabel : market?.noLabel}
+                  tvMode={tvMode}
+                  displayFormat={displayFormat}
+                  onToggleFormat={() => setDisplayFormat((v) => (v === "percent" ? "moneyline" : "percent"))}
+                />
+              </div>
+              <VerticalResizer tvMode={tvMode} onResize={setSplit} />
+              <div className={tvMode ? "mt-2 min-h-0" : "mt-4"} style={tvMode ? { flex: split } : undefined}>
+                <Chart candles={candles} height={tvMode ? 1 : 360} tvMode={tvMode} showMidpoint={showMidpoint} />
+              </div>
             </div>
           </div>
         )}

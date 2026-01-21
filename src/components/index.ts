@@ -5,3 +5,4 @@ export { default as MarketControls } from "./MarketControls";
 export { default as OddsDisplay } from "./OddsDisplay";
 export { default as StatusBadge } from "./StatusBadge";
 export { default as TVHint } from "./TVHint";
+export { default as VerticalResizer } from "./VerticalResizer";
