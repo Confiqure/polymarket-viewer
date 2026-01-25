@@ -1,60 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import axios from "axios";
 import { z } from "zod";
-
-const GammaMarket = z.object({
-  question: z.string().nullable(),
-  conditionId: z.string(),
-  slug: z.string().nullable(),
-  endDateIso: z.string().nullable().optional(),
-  clobTokenIds: z
-    .union([z.string(), z.array(z.string())])
-    .nullable()
-    .optional(),
-  shortOutcomes: z
-    .union([z.string(), z.array(z.string())])
-    .nullable()
-    .optional(),
-  outcomes: z
-    .union([z.string(), z.array(z.string())])
-    .nullable()
-    .optional(),
-});
-
-function extractSlug(u: string) {
-  const url = new URL(u);
-  const parts = url.pathname.split("/").filter(Boolean);
-  const idx = parts.indexOf("event");
-  if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
-  return parts.at(-1) ?? "";
-}
-
-function parseListField(value: unknown): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.map(String);
-  const s = String(value).trim();
-  if (!s) return [];
-  // Try JSON array first
-  if ((s.startsWith("[") && s.endsWith("]")) || (s.startsWith('"') && s.endsWith('"'))) {
-    try {
-      const parsed = JSON.parse(s);
-      if (Array.isArray(parsed)) return parsed.map(String);
-      if (typeof parsed === "string") return parsed.split(",").map((x) => x.trim().replace(/^\"|\"$/g, ""));
-    } catch {
-      // fall through to CSV parsing
-    }
-  }
-  // Fallback: CSV split
-  return s
-    .split(",")
-    .map((x) =>
-      x
-        .trim()
-        .replace(/^\"|\"$/g, "")
-        .replace(/^\[|\]$/g, ""),
-    )
-    .filter(Boolean);
-}
+import { extractSlug } from "@/lib/slug";
+import { parseListField } from "@/lib/data";
+import { fetchMarketsBySlug } from "@/lib/gamma";
 
 async function resolveFromUrl(req: NextRequest) {
   try {
@@ -73,9 +21,9 @@ async function resolveFromUrl(req: NextRequest) {
     if (!slug) return NextResponse.json({ error: "could not parse slug" }, { status: 400 });
 
     console.log("[resolve] incoming url:", inputUrl, "slug:", slug);
-    const { data } = await axios.get("https://gamma-api.polymarket.com/markets", { params: { slug } });
+    const markets = await fetchMarketsBySlug(slug);
 
-    if (!Array.isArray(data) || data.length === 0) {
+    if (markets.length === 0) {
       // Try to parse direct token id from URL paths like /market/<id> if present
       const maybeId = slug?.match(/[0-9]{3,}/)?.[0];
       if (maybeId) {
@@ -91,7 +39,6 @@ async function resolveFromUrl(req: NextRequest) {
     }
 
     // Find the first strictly binary market (2 tokens)
-    const markets = data.map((d: unknown) => GammaMarket.parse(d));
     const binary = markets.find((m) => {
       const tokenIds = parseListField(m.clobTokenIds);
       const out1 = parseListField(m.shortOutcomes);

@@ -12,6 +12,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://polymarket.dylanwheeler.net";
+
 export const metadata: Metadata = {
   title: {
     default: "Polymarket Viewer",
@@ -19,15 +21,12 @@ export const metadata: Metadata = {
   },
   description: "TV-friendly delayed probability & candlestick viewer for Polymarket markets.",
   applicationName: "Polymarket Viewer",
-  metadataBase:
-    typeof process !== "undefined" && process.env.NEXT_PUBLIC_SITE_URL
-      ? new URL(process.env.NEXT_PUBLIC_SITE_URL)
-      : undefined,
+  metadataBase: new URL(SITE_URL),
   openGraph: {
     title: "Polymarket Viewer",
     description: "Large-format delayed probabilities & lightweight candlesticks for Polymarket.",
     type: "website",
-    url: process.env.NEXT_PUBLIC_SITE_URL || undefined,
+    url: SITE_URL,
     images: [
       {
         url: "/og.png",

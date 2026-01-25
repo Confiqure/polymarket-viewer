@@ -67,10 +67,17 @@ export function useMarketWS(yesTokenId: string | undefined, noTokenId: string | 
             fetch(`/api/price?tokenId=${encodeURIComponent(yesTokenId)}`).then((r) => r.json()),
             fetch(`/api/price?tokenId=${encodeURIComponent(noTokenId)}`).then((r) => r.json()),
           ]);
-          if (buy?.bestBid != null) tobRef.current[yesTokenId].bestBid = parseFloat(buy.bestBid);
-          if (buy?.bestAsk != null) tobRef.current[yesTokenId].bestAsk = parseFloat(buy.bestAsk);
-          if (sell?.bestBid != null) tobRef.current[noTokenId].bestBid = parseFloat(sell.bestBid);
-          if (sell?.bestAsk != null) tobRef.current[noTokenId].bestAsk = parseFloat(sell.bestAsk);
+
+          // Ensure the entry still exists (it might have been cleared if tokens changed during fetch)
+          if (tobRef.current[yesTokenId]) {
+            if (buy?.bestBid != null) tobRef.current[yesTokenId].bestBid = parseFloat(buy.bestBid);
+            if (buy?.bestAsk != null) tobRef.current[yesTokenId].bestAsk = parseFloat(buy.bestAsk);
+          }
+          if (tobRef.current[noTokenId]) {
+            if (sell?.bestBid != null) tobRef.current[noTokenId].bestBid = parseFloat(sell.bestBid);
+            if (sell?.bestAsk != null) tobRef.current[noTokenId].bestAsk = parseFloat(sell.bestAsk);
+          }
+
           const tNow = Date.now();
           const probYes = computeBlendedProb();
           const probNo = computeNoProb();
