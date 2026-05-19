@@ -29,42 +29,43 @@ export function MarketControls({
 }) {
   if (tvMode) return null;
   return (
-    <div className="relative mt-3 flex flex-wrap items-center gap-3 pl-3 before:absolute before:top-1/2 before:left-0 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-neutral-700">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl bg-neutral-900/60 px-4 py-3 ring-1 ring-neutral-800">
       <div className="flex items-center gap-2 text-sm">
-        <span>Outcome</span>
-        <div className="inline-flex overflow-hidden rounded-md bg-neutral-900 ring-1 ring-neutral-800">
+        <span className="text-xs tracking-wider text-neutral-500 uppercase">Outcome</span>
+        <div className="inline-flex overflow-hidden rounded-md bg-neutral-950 ring-1 ring-neutral-800">
           <button
             type="button"
-            className={`px-4 py-2 text-sm font-semibold ${pov === "YES" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
+            className={`px-3 py-1.5 text-sm font-semibold transition ${pov === "YES" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
             onClick={() => onPovChange("YES")}
           >
             {yesLabel ?? "YES"}
           </button>
           <button
             type="button"
-            className={`px-4 py-2 text-sm font-semibold ${pov === "NO" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
+            className={`px-3 py-1.5 text-sm font-semibold transition ${pov === "NO" ? "bg-neutral-700 text-white" : "text-slate-300 hover:bg-neutral-800"}`}
             onClick={() => onPovChange("NO")}
           >
             {noLabel ?? "NO"}
           </button>
         </div>
       </div>
+      <span aria-hidden="true" className="hidden h-5 w-px bg-neutral-800 sm:block" />
       <label className="flex items-center gap-2 text-sm">
-        Delay
+        <span className="text-xs tracking-wider text-neutral-500 uppercase">Delay</span>
         <input
           type="number"
           min={0}
           max={600}
-          className="w-20 rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800"
+          className="w-16 rounded-md bg-neutral-950 px-2 py-1 text-sm tabular-nums ring-1 ring-neutral-800 focus:ring-indigo-500 focus:outline-none"
           value={delaySec}
           onChange={(e) => onDelayChange(Number(e.target.value))}
         />
-        s
+        <span className="text-xs text-neutral-500">s</span>
       </label>
       <label className="flex items-center gap-2 text-sm">
-        Candle size
+        <span className="text-xs tracking-wider text-neutral-500 uppercase">Candle</span>
         <select
-          className="rounded bg-neutral-900 px-2 py-1 ring-1 ring-neutral-800"
+          className="rounded-md bg-neutral-950 px-2 py-1 text-sm ring-1 ring-neutral-800 focus:ring-indigo-500 focus:outline-none"
           value={tf}
           onChange={(e) => onTfChange(Number(e.target.value) as TF)}
         >
@@ -75,12 +76,12 @@ export function MarketControls({
           ))}
         </select>
       </label>
-      <label className="flex items-center gap-2 text-sm">
+      <label className="ml-auto flex items-center gap-2 text-sm text-slate-300">
         <input
           type="checkbox"
           checked={showMidpoint}
           onChange={(e) => onShowMidpointChange(e.target.checked)}
-          className="h-4 w-4 accent-neutral-500"
+          className="h-4 w-4 accent-indigo-500"
         />
         Midpoint
       </label>

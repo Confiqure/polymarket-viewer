@@ -262,7 +262,7 @@ export function Chart({
   return (
     <div
       ref={ref}
-      className={`relative w-full rounded-lg border border-neutral-800 ${tvMode ? "h-full" : ""}`}
+      className={`relative w-full overflow-hidden rounded-xl bg-neutral-950/40 ring-1 ring-neutral-800 ${tvMode ? "h-full" : ""}`}
       style={!tvMode ? { height } : undefined}
     >
       {!hasData && (
