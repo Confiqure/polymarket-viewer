@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MarketRef } from "@/lib/types";
+import type { ResolvedMarket } from "@/lib/types";
 import { resolveMarket as svcResolveMarket } from "@/services/polymarket";
 
 function isAbsoluteHttpUrl(u: string) {
@@ -47,7 +47,7 @@ export function useResolveMarket({
 }: {
   marketUrl: string;
   enabled?: boolean;
-  onResolved: (market: MarketRef, resolvedUrl: string) => void;
+  onResolved: (resolved: ResolvedMarket, resolvedUrl: string) => void;
   debounceMs?: number;
 }) {
   const [resolving, setResolving] = useState(false);

@@ -1,8 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { extractSlug } from "@/lib/slug";
-import { parseListField } from "@/lib/data";
-import { fetchMarketsBySlug } from "@/lib/gamma";
+import { fetchEventBySlug, fetchMarketsBySlug } from "@/lib/gamma";
+import { gammaMarketToRef, interpretEvent } from "@/lib/market";
+import type { ResolvedMarket } from "@/lib/types";
+
+function classifyUrlPath(rawUrl: string): "event" | "market" | "unknown" {
+  try {
+    const u = new URL(rawUrl);
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts[0] === "event") return "event";
+    if (parts[0] === "market") return "market";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function tryEvent(slug: string): Promise<ResolvedMarket | { error: string; status: number } | null> {
+  const event = await fetchEventBySlug(slug);
+  if (!event) return null;
+  const interpreted = interpretEvent(event);
+  if (interpreted.kind === "unsupported") {
+    return { error: interpreted.reason, status: 422 };
+  }
+  if (interpreted.kind === "market") {
+    return interpreted; // SingleMarketResolution
+  }
+  return interpreted.event; // EventRef already shaped as ResolvedMarket variant
+}
+
+async function tryMarket(slug: string): Promise<ResolvedMarket | null> {
+  const markets = await fetchMarketsBySlug(slug);
+  if (markets.length === 0) return null;
+  // Pick the first binary market (current behavior)
+  for (const m of markets) {
+    const ref = gammaMarketToRef(m);
+    if (ref) return { kind: "market", market: ref };
+  }
+  return null;
+}
 
 async function resolveFromUrl(req: NextRequest) {
   try {
@@ -20,82 +57,71 @@ async function resolveFromUrl(req: NextRequest) {
     const slug = extractSlug(inputUrl);
     if (!slug) return NextResponse.json({ error: "could not parse slug" }, { status: 400 });
 
-    console.log("[resolve] incoming url:", inputUrl, "slug:", slug);
-    const markets = await fetchMarketsBySlug(slug);
+    const pathKind = classifyUrlPath(inputUrl);
+    console.log("[resolve] incoming url:", inputUrl, "slug:", slug, "pathKind:", pathKind);
 
-    if (markets.length === 0) {
-      // Try to parse direct token id from URL paths like /market/<id> if present
-      const maybeId = slug?.match(/[0-9]{3,}/)?.[0];
-      if (maybeId) {
-        return NextResponse.json({
+    // Resolution order depends on URL hint.
+    const order: Array<"event" | "market"> = pathKind === "market" ? ["market", "event"] : ["event", "market"];
+
+    let unsupported: { error: string; status: number } | null = null;
+    for (const step of order) {
+      if (step === "event") {
+        const r = await tryEvent(slug);
+        if (r && "error" in r) {
+          unsupported = r;
+          continue;
+        }
+        if (r) {
+          logResolved(r);
+          return NextResponse.json(r);
+        }
+      } else {
+        const r = await tryMarket(slug);
+        if (r) {
+          logResolved(r);
+          return NextResponse.json(r);
+        }
+      }
+    }
+
+    if (unsupported) {
+      return NextResponse.json({ error: unsupported.error }, { status: unsupported.status });
+    }
+
+    // Last-resort: maybe the slug is a raw token id
+    const maybeId = slug.match(/[0-9]{3,}/)?.[0];
+    if (maybeId) {
+      const fallback: ResolvedMarket = {
+        kind: "market",
+        market: {
           question: "",
           conditionId: "",
           yesTokenId: maybeId,
           noTokenId: "",
           slug,
-        });
-      }
-      return NextResponse.json({ error: "Market not found" }, { status: 404 });
-    }
-
-    // Find the first strictly binary market (2 tokens)
-    const binary = markets.find((m) => {
-      const tokenIds = parseListField(m.clobTokenIds);
-      const out1 = parseListField(m.shortOutcomes);
-      const out2 = parseListField(m.outcomes);
-      const outs = out1.length ? out1 : out2;
-      return tokenIds.length === 2 || outs.length === 2;
-    });
-
-    if (!binary) {
-      const debug = req.nextUrl.searchParams.get("debug");
-      const payload = {
-        error: "Not a binary market for this slug",
-        markets: markets.map((m) => ({
-          conditionId: m.conditionId,
-          clobTokenIds: m.clobTokenIds,
-          shortOutcomes: m.shortOutcomes,
-          outcomes: m.outcomes,
-        })),
+        },
       };
-      return NextResponse.json(payload, { status: debug ? 200 : 400 });
+      return NextResponse.json(fallback);
     }
 
-    const tokenIds = parseListField(binary.clobTokenIds);
-    const shortOuts = parseListField(binary.shortOutcomes);
-    const outs2 = parseListField(binary.outcomes);
-    const outcomes = shortOuts.length ? shortOuts : outs2;
-
-    if (tokenIds.length !== 2) return NextResponse.json({ error: "Binary market missing tokens" }, { status: 400 });
-
-    // Choose YES/NO mapping: prefer explicit Yes/No, otherwise default to [0]=YES, [1]=NO
-    let yesIdx = outcomes.findIndex((o) => /yes/i.test(o));
-    if (yesIdx < 0) yesIdx = 0;
-    const noIdx = yesIdx === 0 ? 1 : 0;
-
-    const response = {
-      question: binary.question ?? "",
-      conditionId: binary.conditionId,
-      yesTokenId: tokenIds[yesIdx],
-      noTokenId: tokenIds[noIdx],
-      endDateIso: binary.endDateIso ?? undefined,
-      slug: binary.slug ?? undefined,
-      yesLabel: outcomes[yesIdx] ?? "Yes",
-      noLabel: outcomes[noIdx] ?? "No",
-    };
-    console.log("[resolve] selected market:", {
-      question: response.question,
-      conditionId: response.conditionId,
-      yesTokenId: response.yesTokenId,
-      noTokenId: response.noTokenId,
-      yesLabel: response.yesLabel,
-      noLabel: response.noLabel,
-    });
-    return NextResponse.json(response);
+    return NextResponse.json({ error: "Market not found" }, { status: 404 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "unknown error";
     console.error("[resolve] error:", e);
     return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+function logResolved(r: ResolvedMarket) {
+  if (r.kind === "event") {
+    console.log("[resolve] event:", { slug: r.slug, title: r.title, options: r.options.length, negRisk: r.negRisk });
+  } else {
+    console.log("[resolve] market:", {
+      question: r.market.question,
+      conditionId: r.market.conditionId,
+      yesTokenId: r.market.yesTokenId,
+      noTokenId: r.market.noTokenId,
+    });
   }
 }
 
