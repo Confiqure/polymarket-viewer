@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import HomeContent from "@/features/home/HomeContent";
 import { extractSlug } from "@/lib/slug";
 import { parseListField } from "@/lib/data";
-import { fetchMarketsBySlug } from "@/lib/gamma";
+import { fetchEventBySlug, fetchMarketsBySlug } from "@/lib/gamma";
+import { gammaMarketToOption, sortOptionsForPicker } from "@/lib/market";
 
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -13,6 +14,8 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const resolvedParams = await searchParams;
   const urlParam = resolvedParams?.url;
   const url = Array.isArray(urlParam) ? urlParam[0] : urlParam;
+  const optionParam = resolvedParams?.option;
+  const optionId = Array.isArray(optionParam) ? optionParam[0] : optionParam;
 
   if (!url) return {};
 
@@ -20,9 +23,52 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   if (!slug) return {};
 
   try {
+    // Try event first
+    const event = await fetchEventBySlug(slug);
+    if (event && event.markets.length > 0) {
+      const options = sortOptionsForPicker(
+        event.markets.map((m) => gammaMarketToOption(m)).filter((o): o is NonNullable<typeof o> => o !== null),
+      );
+
+      if (options.length >= 2) {
+        const title = event.title ?? slug;
+        const image = event.image ?? undefined;
+
+        // Deep-link to a specific candidate
+        const pinned = optionId ? options.find((o) => o.id === optionId) : null;
+        if (pinned) {
+          const pct = pinned.lastPrice != null ? `${Math.round(pinned.lastPrice * 100)}%` : "—";
+          const pinnedTitle = `${pinned.label} — ${title}`;
+          const description = `${pct} chance to win • ${title}`;
+          const images = pinned.image ? [pinned.image] : image ? [image] : undefined;
+          return {
+            title: pinnedTitle,
+            description,
+            openGraph: { title: pinnedTitle, description, type: "website", images },
+            twitter: { card: "summary_large_image", title: pinnedTitle, description, images },
+          };
+        }
+
+        // Aggregated leaderboard
+        const top = options.slice(0, 4);
+        const parts = top.map((o) => `${o.label}: ${o.lastPrice != null ? Math.round(o.lastPrice * 100) : "?"}%`);
+        const more = options.length - top.length;
+        const leaderboard = parts.join(" • ") + (more > 0 ? ` • +${more} more` : "");
+        const cleanDesc = (event.description ?? "").replace(/\s+/g, " ").trim();
+        const description = cleanDesc ? `${leaderboard} • ${cleanDesc}` : leaderboard;
+        const images = image ? [image] : undefined;
+        return {
+          title,
+          description,
+          openGraph: { title, description, type: "website", images },
+          twitter: { card: "summary_large_image", title, description, images },
+        };
+      }
+    }
+
+    // Fallback: legacy single-market path
     const markets = await fetchMarketsBySlug(slug);
     const market = markets[0];
-
     if (!market || !market.question) return {};
 
     const outcomes = parseListField(market.outcomes);
@@ -38,13 +84,8 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
       oddsStr = odds.join(" | ");
     }
 
-    // Clean up the description: remove newlines and extra spaces
     const cleanDesc = (market.description || "").replace(/\s+/g, " ").trim();
-
-    // Combine odds with the clean description using a bullet point
     const description = oddsStr ? `${oddsStr} • ${cleanDesc}` : cleanDesc;
-
-    // Use the market image if available
     const images = market.image ? [market.image] : undefined;
 
     return {
