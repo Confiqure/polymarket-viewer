@@ -1,7 +1,28 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import type { MarketRef, PricePoint } from "@/lib/types";
-import { fetchHistory } from "@/services/polymarket";
+
+const HistorySchema = z
+  .object({ history: z.array(z.object({ t: z.number(), p: z.number() })) })
+  .or(z.array(z.object({ t: z.number(), p: z.number() })));
+
+type HistoryPoint = { t: number; p: number };
+
+async function fetchHistory(tokenId: string, fidelity: string = "1"): Promise<HistoryPoint[]> {
+  const res = await fetch(
+    `/api/history?tokenId=${encodeURIComponent(tokenId)}&fidelity=${encodeURIComponent(fidelity)}`,
+    {
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`history_unavailable_${res.status}`);
+  }
+  const data = await res.json();
+  const parsed = HistorySchema.parse(data);
+  return Array.isArray(parsed) ? parsed : parsed.history;
+}
 
 export function useMarketHistory(market: MarketRef | null) {
   const [backfillYes, setBackfillYes] = useState<PricePoint[]>([]);
@@ -31,30 +52,31 @@ export function useMarketHistory(market: MarketRef | null) {
         const noId = market.noTokenId;
         const [yesRes, noRes] = await Promise.allSettled([fetchHistory(yesId, "1"), fetchHistory(noId, "1")]);
 
-        // Prevent race conditions: if market changed while fetching, discard results
         if (market !== latestMarketRef.current) return;
 
         if (yesRes.status === "fulfilled") {
           setBackfillYes(yesRes.value.map((h) => ({ t: h.t * 1000, p: h.p })));
-        } else {
-          console.warn("[History] YES fetch failed", yesRes.reason);
-          if (!isRefresh) setBackfillYes([]);
+        } else if (!isRefresh) {
+          setBackfillYes([]);
         }
         if (noRes.status === "fulfilled") {
           setBackfillNo(noRes.value.map((h) => ({ t: h.t * 1000, p: h.p })));
-        } else {
-          console.warn("[History] NO fetch failed", noRes.reason);
-          if (!isRefresh) setBackfillNo([]);
+        } else if (!isRefresh) {
+          setBackfillNo([]);
         }
+
+        if (yesRes.status === "rejected" && noRes.status === "rejected") {
+          setError("Couldn't load price history");
+        }
+
         lastFetchRef.current = Date.now();
-      } catch (err) {
+      } catch {
         if (market !== latestMarketRef.current) return;
-        console.error("[History] batch fetch unexpected error", err);
         if (!isRefresh) {
           setBackfillYes([]);
           setBackfillNo([]);
         }
-        setError("Failed to fetch history");
+        setError("Couldn't load price history");
       } finally {
         if (market === latestMarketRef.current) setLoading(false);
       }
@@ -62,18 +84,15 @@ export function useMarketHistory(market: MarketRef | null) {
     [market],
   );
 
-  // Initial fetch when market changes
   useEffect(() => {
     fetchHistoryData(false);
   }, [fetchHistoryData]);
 
-  // Refetch on visibility change if stale
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         const now = Date.now();
         if (now - lastFetchRef.current > 60 * 1000) {
-          console.log("[History] App resumed, refreshing history to fill gaps");
           fetchHistoryData(true);
         }
       }
@@ -82,7 +101,9 @@ export function useMarketHistory(market: MarketRef | null) {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [fetchHistoryData]);
 
-  return { backfillYes, backfillNo, loading, error } as const;
+  const refetch = useCallback(() => fetchHistoryData(true), [fetchHistoryData]);
+
+  return { backfillYes, backfillNo, loading, error, refetch } as const;
 }
 
 export default useMarketHistory;

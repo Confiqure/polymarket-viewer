@@ -25,15 +25,14 @@ async function tryEvent(slug: string): Promise<ResolvedMarket | { error: string;
     return { error: interpreted.reason, status: 422 };
   }
   if (interpreted.kind === "market") {
-    return interpreted; // SingleMarketResolution
+    return interpreted;
   }
-  return interpreted.event; // EventRef already shaped as ResolvedMarket variant
+  return interpreted.event;
 }
 
 async function tryMarket(slug: string): Promise<ResolvedMarket | null> {
   const markets = await fetchMarketsBySlug(slug);
   if (markets.length === 0) return null;
-  // Pick the first binary market (current behavior)
   for (const m of markets) {
     const ref = gammaMarketToRef(m);
     if (ref) return { kind: "market", market: ref };
@@ -58,9 +57,6 @@ async function resolveFromUrl(req: NextRequest) {
     if (!slug) return NextResponse.json({ error: "could not parse slug" }, { status: 400 });
 
     const pathKind = classifyUrlPath(inputUrl);
-    console.log("[resolve] incoming url:", inputUrl, "slug:", slug, "pathKind:", pathKind);
-
-    // Resolution order depends on URL hint.
     const order: Array<"event" | "market"> = pathKind === "market" ? ["market", "event"] : ["event", "market"];
 
     let unsupported: { error: string; status: number } | null = null;
@@ -71,57 +67,20 @@ async function resolveFromUrl(req: NextRequest) {
           unsupported = r;
           continue;
         }
-        if (r) {
-          logResolved(r);
-          return NextResponse.json(r);
-        }
+        if (r) return NextResponse.json(r);
       } else {
         const r = await tryMarket(slug);
-        if (r) {
-          logResolved(r);
-          return NextResponse.json(r);
-        }
+        if (r) return NextResponse.json(r);
       }
     }
 
     if (unsupported) {
       return NextResponse.json({ error: unsupported.error }, { status: unsupported.status });
     }
-
-    // Last-resort: maybe the slug is a raw token id
-    const maybeId = slug.match(/[0-9]{3,}/)?.[0];
-    if (maybeId) {
-      const fallback: ResolvedMarket = {
-        kind: "market",
-        market: {
-          question: "",
-          conditionId: "",
-          yesTokenId: maybeId,
-          noTokenId: "",
-          slug,
-        },
-      };
-      return NextResponse.json(fallback);
-    }
-
     return NextResponse.json({ error: "Market not found" }, { status: 404 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "unknown error";
-    console.error("[resolve] error:", e);
     return NextResponse.json({ error: msg }, { status: 500 });
-  }
-}
-
-function logResolved(r: ResolvedMarket) {
-  if (r.kind === "event") {
-    console.log("[resolve] event:", { slug: r.slug, title: r.title, options: r.options.length, negRisk: r.negRisk });
-  } else {
-    console.log("[resolve] market:", {
-      question: r.market.question,
-      conditionId: r.market.conditionId,
-      yesTokenId: r.market.yesTokenId,
-      noTokenId: r.market.noTokenId,
-    });
   }
 }
 

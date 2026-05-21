@@ -68,6 +68,7 @@ export async function fetchMarketsBySlug(slug: string): Promise<GammaMarket[]> {
 
     const res = await fetch(url.toString(), {
       next: { revalidate: 60 },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) return [];
@@ -98,6 +99,7 @@ export async function fetchEventBySlug(slug: string): Promise<GammaEvent | null>
 
     const res = await fetch(url.toString(), {
       next: { revalidate: 60 },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) return null;

@@ -1,63 +1,65 @@
-export type MarketRef = {
-  question: string;
-  conditionId: string;
-  yesTokenId: string;
-  noTokenId: string;
-  endDateIso?: string;
-  slug?: string;
-  yesLabel?: string;
-  noLabel?: string;
-  /** Display name shown in the OddsDisplay (e.g. candidate name for event options). */
-  displayName?: string;
-  /** Opposing label shown when POV=NO in event mode (e.g. "Field"). */
-  oppositeDisplayName?: string;
-  /** Optional image for the underlying entity (candidate avatar, team logo, etc.). */
-  image?: string;
-};
+import { z } from "zod";
 
-/** A single binary sub-market belonging to a multi-outcome (negRisk) event. */
-export type MarketOption = {
-  /** Stable identifier used in URLs (slugified groupItemTitle, falling back to market slug). */
-  id: string;
-  conditionId: string;
-  yesTokenId: string;
-  noTokenId: string;
-  /** Human-readable name (e.g. candidate name) — from groupItemTitle, falling back to question. */
-  label: string;
-  question: string;
-  yesLabel: string;
-  noLabel: string;
-  image?: string;
-  icon?: string;
-  /** Current YES probability snapshot from Gamma (0..1). */
-  lastPrice?: number;
-  volume?: number;
-  volume24hr?: number;
-  closed: boolean;
-  active: boolean;
-};
+export const MarketRefSchema = z.object({
+  question: z.string(),
+  conditionId: z.string(),
+  yesTokenId: z.string(),
+  noTokenId: z.string(),
+  endDateIso: z.string().optional(),
+  slug: z.string().optional(),
+  yesLabel: z.string().optional(),
+  noLabel: z.string().optional(),
+  displayName: z.string().optional(),
+  oppositeDisplayName: z.string().optional(),
+  image: z.string().optional(),
+});
 
-/** Resolved multi-outcome event (e.g. "KY-04 Republican Primary Winner"). */
-export type EventRef = {
-  kind: "event";
-  slug: string;
-  title: string;
-  description?: string;
-  image?: string;
-  icon?: string;
-  endDateIso?: string;
-  negRisk: boolean;
-  options: MarketOption[];
-};
+export type MarketRef = z.infer<typeof MarketRefSchema>;
 
-/** Resolved single binary market (legacy / direct-link case). */
-export type SingleMarketResolution = {
-  kind: "market";
-  market: MarketRef;
-};
+export const MarketOptionSchema = z.object({
+  id: z.string(),
+  conditionId: z.string(),
+  yesTokenId: z.string(),
+  noTokenId: z.string(),
+  label: z.string(),
+  question: z.string(),
+  yesLabel: z.string(),
+  noLabel: z.string(),
+  image: z.string().optional(),
+  icon: z.string().optional(),
+  lastPrice: z.number().optional(),
+  volume: z.number().optional(),
+  volume24hr: z.number().optional(),
+  closed: z.boolean(),
+  active: z.boolean(),
+});
 
-/** Discriminated union returned by the /api/resolve endpoint. */
-export type ResolvedMarket = EventRef | SingleMarketResolution;
+export type MarketOption = z.infer<typeof MarketOptionSchema>;
+
+export const EventRefSchema = z.object({
+  kind: z.literal("event"),
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  image: z.string().optional(),
+  icon: z.string().optional(),
+  endDateIso: z.string().optional(),
+  negRisk: z.boolean(),
+  options: z.array(MarketOptionSchema),
+});
+
+export type EventRef = z.infer<typeof EventRefSchema>;
+
+export const SingleMarketResolutionSchema = z.object({
+  kind: z.literal("market"),
+  market: MarketRefSchema,
+});
+
+export type SingleMarketResolution = z.infer<typeof SingleMarketResolutionSchema>;
+
+export const ResolvedMarketSchema = z.discriminatedUnion("kind", [EventRefSchema, SingleMarketResolutionSchema]);
+
+export type ResolvedMarket = z.infer<typeof ResolvedMarketSchema>;
 
 export type PricePoint = { t: number; p: number };
 

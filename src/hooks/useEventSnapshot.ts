@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { MarketOption } from "@/lib/types";
+import { type MarketOption, ResolvedMarketSchema } from "@/lib/types";
 
 /**
  * Lightweight periodic refresh of an event's per-option price snapshot.
@@ -30,12 +30,14 @@ export function useEventSnapshot(eventSlug: string | undefined, intervalMs = 30_
     const fetchOnce = async () => {
       try {
         const url = `/api/resolve?url=${encodeURIComponent(`https://polymarket.com/event/${eventSlug}`)}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled || !mountedRef.current) return;
-        if (data?.kind === "event" && Array.isArray(data.options)) {
-          setSnapshot(data.options as MarketOption[]);
+        const parsed = ResolvedMarketSchema.safeParse(data);
+        if (!parsed.success) return;
+        if (parsed.data.kind === "event") {
+          setSnapshot(parsed.data.options);
           setLastUpdated(Date.now());
         }
       } catch {

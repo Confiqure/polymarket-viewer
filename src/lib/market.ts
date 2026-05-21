@@ -1,5 +1,5 @@
 import type { GammaEvent, GammaMarket } from "@/lib/gamma";
-import { parseListField } from "@/lib/data";
+import { parseListField, toNum } from "@/lib/data";
 import type { EventRef, MarketOption, MarketRef, SingleMarketResolution } from "@/lib/types";
 
 /** Slugify a free-form label for use as a stable URL identifier. */
@@ -10,12 +10,6 @@ export function slugifyLabel(s: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-}
-
-function toNum(v: unknown): number | undefined {
-  if (v == null) return undefined;
-  const n = typeof v === "number" ? v : parseFloat(String(v));
-  return Number.isFinite(n) ? n : undefined;
 }
 
 /** Returns {tokenIds, outcomes} if the market is a valid 2-token binary; otherwise null. */

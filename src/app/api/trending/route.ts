@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { toNum } from "@/lib/data";
 
 // The upstream Gamma /events payload can exceed Next.js's 2MB fetch-cache cap,
 // so we use `cache: "no-store"` for the upstream call and instead cache our
@@ -25,15 +26,6 @@ function toStr(v: unknown): string | undefined {
   return typeof v === "string" && v ? v : undefined;
 }
 
-function toNum(v: unknown): number | undefined {
-  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
-  if (typeof v === "string") {
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? n : undefined;
-  }
-  return undefined;
-}
-
 export async function GET() {
   try {
     const url = new URL("https://gamma-api.polymarket.com/events");
@@ -48,7 +40,7 @@ export async function GET() {
     url.searchParams.set("order", "volume24hr");
     url.searchParams.set("ascending", "false");
 
-    const res = await fetch(url.toString(), { cache: "no-store" });
+    const res = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(8000) });
     if (!res.ok) return NextResponse.json({ events: [] }, { status: 200 });
 
     const data = (await res.json()) as unknown;
