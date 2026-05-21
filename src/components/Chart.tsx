@@ -18,11 +18,17 @@ export function Chart({
   height = 320,
   tvMode = false,
   showMidpoint = true,
+  historyLoading = false,
+  historyError = null,
+  onRetryHistory,
 }: {
   candles: Array<CandleType>;
   height?: number;
   tvMode?: boolean;
   showMidpoint?: boolean;
+  historyLoading?: boolean;
+  historyError?: string | null;
+  onRetryHistory?: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<{
@@ -199,10 +205,7 @@ export function Chart({
         data.push(d);
         lastTime = t;
       }
-      if (data.length === 0) {
-        console.debug("[Chart] No candles to display", { candles: candles.length });
-        return;
-      }
+      if (data.length === 0) return;
       // Detect series change (first timestamp change) and reset the initial window flag
       const firstTs = candles[0]?.t ?? null;
       if (firstTs !== prevSeriesStartRef.current) {
@@ -265,8 +268,48 @@ export function Chart({
       className={`relative w-full overflow-hidden rounded-xl bg-neutral-950/40 ring-1 ring-neutral-800 ${tvMode ? "h-full" : ""}`}
       style={!tvMode ? { height } : undefined}
     >
-      {!hasData && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      {!hasData && historyError && (
+        <div role="alert" className="absolute inset-0 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2 rounded-md bg-black/60 px-4 py-3 text-sm text-red-200 ring-1 ring-red-800">
+            <span>Couldn&apos;t load price history</span>
+            {onRetryHistory && (
+              <button
+                type="button"
+                onClick={onRetryHistory}
+                className="rounded-md bg-red-950 px-3 py-1 text-xs text-red-200 ring-1 ring-red-700 hover:bg-red-900"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {!hasData && !historyError && historyLoading && (
+        <div
+          role="status"
+          aria-label="Loading price history"
+          className="pointer-events-none absolute inset-0 animate-pulse overflow-hidden p-4"
+        >
+          {/* faint horizontal gridlines */}
+          <div className="absolute inset-4 flex flex-col justify-between">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-px w-full bg-neutral-700/50" />
+            ))}
+          </div>
+          {/* candlestick-shaped placeholder bars */}
+          <div className="relative flex h-full items-end gap-1 sm:gap-1.5">
+            {Array.from({ length: 28 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-sm bg-neutral-800"
+                style={{ height: `${30 + ((i * 13 + 7) % 50)}%` }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {!hasData && !historyError && !historyLoading && (
+        <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-md bg-black/60 px-3 py-2 text-sm text-neutral-400 ring-1 ring-neutral-800">
             No candles yet for this delay/timeframe
           </div>

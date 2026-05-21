@@ -11,6 +11,7 @@ export function Header({
   onToggleTv,
   shareStatus,
   onShare,
+  onHome,
 }: {
   title: string;
   compact: boolean;
@@ -18,6 +19,7 @@ export function Header({
   onToggleTv: (v: boolean) => void;
   shareStatus: ShareStatus;
   onShare: () => void | Promise<void>;
+  onHome?: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -26,7 +28,9 @@ export function Header({
       ) : (
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-300 hover:text-slate-100"
+          onClick={onHome}
+          aria-label="Reset to home"
+          className="inline-flex items-center gap-2 rounded-md text-sm font-semibold tracking-tight text-slate-300 transition hover:text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <span
             aria-hidden="true"
@@ -44,7 +48,7 @@ export function Header({
           type="button"
           onClick={() => onToggleTv(!tvMode)}
           aria-pressed={tvMode}
-          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs ring-1 transition sm:text-sm ${tvMode ? "bg-indigo-500/15 text-indigo-200 ring-indigo-500/40" : "bg-neutral-900 text-neutral-300 ring-neutral-700 hover:ring-neutral-500"}`}
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs ring-1 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 sm:text-sm ${tvMode ? "bg-indigo-500/15 text-indigo-200 ring-indigo-500/40" : "bg-neutral-900 text-neutral-300 ring-neutral-700 hover:ring-neutral-500"}`}
           title="Toggle TV mode (t)"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
@@ -55,7 +59,7 @@ export function Header({
         </button>
         <button
           type="button"
-          className={`inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs ring-1 transition sm:text-sm ${shareStatus === "copied" ? "text-emerald-200 ring-emerald-600" : shareStatus === "failed" ? "text-red-200 ring-red-700" : "text-neutral-300 ring-neutral-700 hover:ring-neutral-500"}`}
+          className={`inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs ring-1 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 sm:text-sm ${shareStatus === "copied" ? "text-emerald-200 ring-emerald-600" : shareStatus === "failed" ? "text-red-200 ring-red-700" : "text-neutral-300 ring-neutral-700 hover:ring-neutral-500"}`}
           onClick={onShare}
           aria-label="Copy shareable link"
           title="Copy shareable link"
