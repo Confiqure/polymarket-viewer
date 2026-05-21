@@ -17,6 +17,8 @@ export function VerticalResizer({ onResize, tvMode }: VerticalResizerProps) {
     document.body.style.cursor = "ns-resize";
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
+      // Prevent the touch from scrolling the page while resizing.
+      if ("touches" in e && e.cancelable) e.preventDefault();
       const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
       const parent = containerRef.current?.parentElement;
       if (!parent) return;

@@ -49,27 +49,48 @@ export function OddsDisplay({
 
   if (prob === undefined || prob === null) {
     const arr = series.toArray();
-    const secs = (() => {
-      if (arr.length === 0) return null;
-      const earliest = arr[0]?.t ?? 0;
-      const remainingMs = earliest + delayMs - nowTs;
-      if (remainingMs <= 0) return 0;
-      return Math.ceil(remainingMs / 1000);
-    })();
+
+    // Truly no data yet — show a skeleton placeholder at the eventual content size.
+    if (arr.length === 0) {
+      return (
+        <div
+          ref={containerRef}
+          role="status"
+          aria-label={label ? `Loading odds for ${label}` : "Loading odds"}
+          className={`flex h-full flex-col items-center justify-center ${tvMode ? "my-0" : "my-6"}`}
+        >
+          <div className={`animate-pulse rounded-md bg-neutral-800 ${tvMode ? "h-[5%] w-1/4" : "h-3 w-32"}`} />
+          <div
+            className={`mt-4 animate-pulse rounded-lg bg-neutral-800 ${tvMode ? "h-[42%] w-1/2" : "h-24 w-56 sm:h-28 sm:w-72"}`}
+          />
+        </div>
+      );
+    }
+
+    // Data exists; we're waiting on the spoiler-safe display window to elapse.
+    const earliest = arr[0]?.t ?? 0;
+    const remainingMs = earliest + delayMs - nowTs;
+    const secs = remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+    const subtitle = secs > 0 ? "Data available in" : "Catching up";
     return (
-      <div ref={containerRef} className={`flex h-full flex-col justify-center text-center ${tvMode ? "my-0" : "my-6"}`}>
+      <div
+        ref={containerRef}
+        role="status"
+        aria-live="polite"
+        className={`flex h-full flex-col justify-center text-center ${tvMode ? "my-0" : "my-6"}`}
+      >
         <div
           className={`${tvMode ? "mb-1" : "mb-4 text-sm sm:text-base"} font-medium tracking-wider text-neutral-400 uppercase opacity-80`}
           style={tvMode ? { fontSize: `${labelScale}px` } : undefined}
         >
           {label ? `${label} to win • ` : ""}
-          {secs != null ? "data available soon" : "waiting for market data"}
+          {subtitle}
         </div>
         <div
           className={`font-extrabold tracking-tight ${tvMode ? "" : "text-7xl"}`}
           style={tvMode ? { fontSize: `${primaryScale}px`, lineHeight: 1 } : undefined}
         >
-          {secs != null ? `${secs}s` : "…"}
+          {secs > 0 ? `${secs}s` : "…"}
         </div>
       </div>
     );
@@ -81,14 +102,24 @@ export function OddsDisplay({
   const primary = displayFormat === "percent" ? pct : ml;
   const secondary = displayFormat === "percent" ? ml : pct;
 
+  const interactive = Boolean(onToggleFormat);
   return (
     <div
       ref={containerRef}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-label={interactive ? "Toggle between percent and moneyline display" : undefined}
       className={`group relative flex h-full flex-col justify-center text-center transition-colors ${
         tvMode ? "my-0" : "my-6"
-      } ${onToggleFormat ? "cursor-pointer hover:bg-neutral-900/50" : ""}`}
+      } ${interactive ? "cursor-pointer hover:bg-neutral-900/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400" : ""}`}
       onClick={onToggleFormat}
-      title="Click to toggle display format (m)"
+      onKeyDown={(e) => {
+        if (interactive && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onToggleFormat?.();
+        }
+      }}
+      title={interactive ? "Click to toggle display format (m)" : undefined}
     >
       <div
         className={`${tvMode ? "mb-1" : "mb-4 text-base sm:text-lg"} font-medium tracking-wider text-neutral-300 uppercase opacity-80`}
