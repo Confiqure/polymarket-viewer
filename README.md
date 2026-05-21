@@ -46,15 +46,26 @@ npm run dev
 
 Paste a Polymarket market or event URL (e.g. `https://polymarket.com/event/...`).
 
+### Scripts
+
+| Script              | What it does                             |
+| ------------------- | ---------------------------------------- |
+| `npm run dev`       | Start the Next.js dev server (Turbopack) |
+| `npm run build`     | Production build                         |
+| `npm run lint`      | ESLint                                   |
+| `npm run format`    | Prettier write                           |
+| `npm run typecheck` | `tsc --noEmit`                           |
+| `npm test`          | Vitest unit tests                        |
+
 ## URL Parameters
 
-| Param   | Example                                 | Description                             |
-| ------- | --------------------------------------- | --------------------------------------- |
-| `url`   | `?url=https://polymarket.com/event/...` | Market/event link to auto-resolve       |
-| `delay` | `delay=30`                              | Seconds of display delay (0–600)        |
-| `tf`    | `tf=5`                                  | Candle timeframe in minutes (1,5,15,60) |
-| `pov`   | `pov=yes`                               | Outcome perspective (`yes` or `no`)     |
-| `mode`  | `mode=tv`                               | TV mode (large probability, wake lock)  |
+| Param   | Example                                 | Description                                                    |
+| ------- | --------------------------------------- | -------------------------------------------------------------- |
+| `url`   | `?url=https://polymarket.com/event/...` | Market/event link to auto-resolve                              |
+| `delay` | `delay=30`                              | Seconds of display delay (0–600)                               |
+| `tf`    | `tf=5`                                  | Candle timeframe in minutes (1, 2, 3, 4, 5, 7, 10, 15, 30, 60) |
+| `pov`   | `pov=yes`                               | Outcome perspective (`yes` or `no`)                            |
+| `mode`  | `mode=tv`                               | TV mode (large probability, wake lock)                         |
 
 Examples:
 
