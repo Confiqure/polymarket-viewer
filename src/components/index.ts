@@ -3,6 +3,7 @@ export { default as EventOptionPicker } from "./EventOptionPicker";
 export { default as Footer } from "./Footer";
 export { default as Header } from "./Header";
 export { default as MarketControls } from "./MarketControls";
+export { default as MatchupSelector } from "./MatchupSelector";
 export { default as OddsDisplay } from "./OddsDisplay";
 export { default as StatusBadge } from "./StatusBadge";
 export { default as TrendingEvents } from "./TrendingEvents";

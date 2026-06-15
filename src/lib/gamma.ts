@@ -14,6 +14,7 @@ export const GammaMarketSchema = z.object({
   icon: z.string().nullable().optional(),
   groupItemTitle: z.string().nullable().optional(),
   groupItemThreshold: z.union([z.string(), z.number()]).nullable().optional(),
+  sportsMarketType: z.string().nullable().optional(),
   closed: z.boolean().nullable().optional(),
   active: z.boolean().nullable().optional(),
   archived: z.boolean().nullable().optional(),

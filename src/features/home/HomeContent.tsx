@@ -156,8 +156,9 @@ export default function HomeContent({
     if (market?.conditionId) setUrlBarOpen(false);
   }, [market?.conditionId]);
 
-  // Document title with live odds (delayed series, throttled to ticker rate)
-  const titleSeries = state.pov === "YES" ? seriesYes : seriesNo;
+  // Document title with live odds (delayed series, throttled to ticker rate).
+  // Matchups lock POV to YES (each outcome is charted as its own win probability).
+  const titleSeries = state.pov === "YES" || event?.matchup ? seriesYes : seriesNo;
   useDocumentTitle(market, event, activeOption, titleSeries, state.delaySec * 1000);
 
   const handleShare = useCallback(() => {

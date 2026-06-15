@@ -8,6 +8,7 @@ export function OddsDisplay({
   nowTs,
   delayMs,
   label,
+  labelSuffix = "to win",
   tvMode,
   displayFormat = "percent",
   onToggleFormat,
@@ -16,6 +17,9 @@ export function OddsDisplay({
   nowTs: number;
   delayMs: number;
   label?: string;
+  // Trailing phrase after the label, e.g. "France to win". Empty for outcomes where
+  // "to win" doesn't read ("Draw", "Over"); then we show just the label.
+  labelSuffix?: string;
   tvMode?: boolean;
   displayFormat?: "percent" | "moneyline";
   onToggleFormat?: () => void;
@@ -83,7 +87,7 @@ export function OddsDisplay({
           className={`${tvMode ? "mb-1" : "mb-4 text-sm sm:text-base"} font-medium tracking-wider text-neutral-400 uppercase opacity-80`}
           style={tvMode ? { fontSize: `${labelScale}px` } : undefined}
         >
-          {label ? `${label} to win • ` : ""}
+          {label ? `${labelSuffix ? `${label} ${labelSuffix}` : label} • ` : ""}
           {subtitle}
         </div>
         <div
@@ -125,7 +129,7 @@ export function OddsDisplay({
         className={`${tvMode ? "mb-1" : "mb-4 text-base sm:text-lg"} font-medium tracking-wider text-neutral-300 uppercase opacity-80`}
         style={tvMode ? { fontSize: `${labelScale}px` } : undefined}
       >
-        {label ?? "Outcome"} to win
+        {labelSuffix ? `${label ?? "Outcome"} ${labelSuffix}` : (label ?? "Outcome")}
       </div>
       <div className="flex flex-col items-center justify-center">
         <div

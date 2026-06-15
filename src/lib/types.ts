@@ -25,6 +25,7 @@ export const MarketOptionSchema = z.object({
   question: z.string(),
   yesLabel: z.string(),
   noLabel: z.string(),
+  sportsMarketType: z.string().optional(),
   image: z.string().optional(),
   icon: z.string().optional(),
   lastPrice: z.number().optional(),
@@ -36,6 +37,15 @@ export const MarketOptionSchema = z.object({
 
 export type MarketOption = z.infer<typeof MarketOptionSchema>;
 
+/** One outcome of a draw-supporting head-to-head match (e.g. soccer), ordered Home → Draw → Away. */
+export const MatchupOutcomeSchema = z.object({
+  optionId: z.string(),
+  label: z.string(),
+  role: z.enum(["home", "draw", "away"]),
+});
+
+export type MatchupOutcome = z.infer<typeof MatchupOutcomeSchema>;
+
 export const EventRefSchema = z.object({
   kind: z.literal("event"),
   slug: z.string(),
@@ -46,6 +56,8 @@ export const EventRefSchema = z.object({
   endDateIso: z.string().optional(),
   negRisk: z.boolean(),
   options: z.array(MarketOptionSchema),
+  // Present only for 3-way matches that support a draw; drives the tri-state selector.
+  matchup: z.array(MatchupOutcomeSchema).optional(),
 });
 
 export type EventRef = z.infer<typeof EventRefSchema>;

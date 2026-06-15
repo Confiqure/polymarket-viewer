@@ -1,7 +1,15 @@
 "use client";
 import Image from "next/image";
 import { useMemo } from "react";
-import { Chart, EventOptionPicker, MarketControls, OddsDisplay, StatusBadge, VerticalResizer } from "@/components";
+import {
+  Chart,
+  EventOptionPicker,
+  MarketControls,
+  MatchupSelector,
+  OddsDisplay,
+  StatusBadge,
+  VerticalResizer,
+} from "@/components";
 import { useTicker } from "@/components/Ticker";
 import { useCandles } from "@/hooks";
 import { filterVisibleOptions } from "@/lib/market";
@@ -59,8 +67,12 @@ export function MarketView({
   const nowTs = useTicker();
   const tvMode = view.tvMode;
   const delayMs = view.delaySec * 1000;
-  const activeSeries = view.pov === "YES" ? seriesYes : seriesNo;
-  const activeBackfill = view.pov === "YES" ? backfillYes : backfillNo;
+  // A matchup's outcomes are chosen via the MatchupSelector, each charted as its own YES
+  // (win) probability — there's no meaningful "Not {outcome}" side, so POV is locked to YES.
+  const isMatchup = Boolean(event?.matchup);
+  const pov = isMatchup ? "YES" : view.pov;
+  const activeSeries = pov === "YES" ? seriesYes : seriesNo;
+  const activeBackfill = pov === "YES" ? backfillYes : backfillNo;
   const candles = useCandles(activeSeries, activeBackfill, nowTs, delayMs, view.tf);
 
   const endsLabel = useMemo(() => {
@@ -77,7 +89,10 @@ export function MarketView({
       : null;
 
   const oddsLabel =
-    view.pov === "YES" ? (market.displayName ?? market.yesLabel) : (market.oppositeDisplayName ?? market.noLabel);
+    pov === "YES" ? (market.displayName ?? market.yesLabel) : (market.oppositeDisplayName ?? market.noLabel);
+  // "Draw to win" doesn't read; show just "Draw" for the draw outcome of a matchup.
+  const activeRole = event?.matchup?.find((o) => o.optionId === activeOption?.id)?.role;
+  const oddsLabelSuffix = activeRole === "draw" ? "" : "to win";
 
   const showUrlBar = !tvMode && urlBarOpen;
 
@@ -133,7 +148,33 @@ export function MarketView({
       <div className={tvMode ? "mt-2 flex min-h-0 flex-1 flex-col" : "mt-4 space-y-4"}>
         {!tvMode && (
           <section className="rounded-xl bg-neutral-900/60 p-4 ring-1 ring-neutral-800">
-            {event ? (
+            {event?.matchup ? (
+              (() => {
+                const allOptions = liveOptions ?? event.options;
+                const matchupIds = new Set(event.matchup.map((o) => o.optionId));
+                // Defensive: surface any sibling markets that aren't part of the 3-way.
+                const extras = filterVisibleOptions(allOptions).filter((o) => !matchupIds.has(o.id));
+                return (
+                  <div className="space-y-3">
+                    <MatchupSelector
+                      outcomes={event.matchup}
+                      options={allOptions}
+                      selectedId={activeOption?.id ?? ""}
+                      onSelect={onSelectOption}
+                      lastUpdated={lastUpdated}
+                    />
+                    {extras.length > 0 && (
+                      <EventOptionPicker
+                        options={extras}
+                        selectedId={activeOption?.id ?? ""}
+                        onSelect={onSelectOption}
+                        filterPlaceholder="More markets…"
+                      />
+                    )}
+                  </div>
+                );
+              })()
+            ) : event ? (
               <EventOptionPicker
                 options={filterVisibleOptions(liveOptions ?? event.options)}
                 selectedId={activeOption?.id ?? ""}
@@ -186,10 +227,11 @@ export function MarketView({
         )}
         <MarketControls
           tvMode={tvMode}
-          pov={view.pov}
+          pov={pov}
           yesLabel={market.displayName ?? market.yesLabel}
           noLabel={market.oppositeDisplayName ?? market.noLabel}
           onPovChange={(v: Pov) => setView({ pov: v })}
+          showOutcomeToggle={!isMatchup}
           delaySec={view.delaySec}
           onDelayChange={(v) => setView({ delaySec: v })}
           tf={view.tf}
@@ -211,6 +253,7 @@ export function MarketView({
               nowTs={nowTs}
               delayMs={delayMs}
               label={oddsLabel}
+              labelSuffix={oddsLabelSuffix}
               tvMode={tvMode}
               displayFormat={view.displayFormat}
               onToggleFormat={() =>
