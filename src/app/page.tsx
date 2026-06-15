@@ -5,7 +5,8 @@ import { TickerProvider } from "@/components/Ticker";
 import { extractSlug } from "@/lib/slug";
 import { parseListField } from "@/lib/data";
 import { fetchEventBySlug, fetchMarketsBySlug } from "@/lib/gamma";
-import { gammaMarketToOption, gammaMarketToRef, interpretEvent, sortOptionsForPicker } from "@/lib/market";
+import { gammaMarketToOption, sortOptionsForPicker } from "@/lib/market";
+import { resolveMarketFromUrl } from "@/lib/resolve";
 import type { ResolvedMarket } from "@/lib/types";
 
 type Props = {
@@ -13,49 +14,14 @@ type Props = {
 };
 
 /**
- * Best-effort server-side resolve mirroring the order used by /api/resolve.
- * Returns null on any failure or unsupported event so the client can fall back
- * to its existing client-side resolve flow (which surfaces error details).
+ * Best-effort server-side resolve using the shared resolver (same flow as /api/resolve).
+ * Returns null on any failure or unsupported event so the client can fall back to its
+ * client-side resolve flow (which surfaces error details).
  */
 async function resolveMarketServer(url: string | undefined): Promise<ResolvedMarket | null> {
   if (!url) return null;
-  const slug = extractSlug(url);
-  if (!slug) return null;
-
-  const pathKind = (() => {
-    try {
-      const u = new URL(url);
-      const parts = u.pathname.split("/").filter(Boolean);
-      if (parts[0] === "event") return "event";
-      if (parts[0] === "market") return "market";
-    } catch {
-      /* fall through */
-    }
-    return "unknown";
-  })();
-  const order = pathKind === "market" ? (["market", "event"] as const) : (["event", "market"] as const);
-
-  for (const step of order) {
-    try {
-      if (step === "event") {
-        const event = await fetchEventBySlug(slug);
-        if (event) {
-          const interpreted = interpretEvent(event);
-          if (interpreted.kind === "event") return interpreted.event;
-          if (interpreted.kind === "market") return interpreted;
-        }
-      } else {
-        const markets = await fetchMarketsBySlug(slug);
-        for (const m of markets) {
-          const ref = gammaMarketToRef(m);
-          if (ref) return { kind: "market", market: ref };
-        }
-      }
-    } catch {
-      // try the next step
-    }
-  }
-  return null;
+  const outcome = await resolveMarketFromUrl(url);
+  return outcome.kind === "ok" ? outcome.resolved : null;
 }
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
