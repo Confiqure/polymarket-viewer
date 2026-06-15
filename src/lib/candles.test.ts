@@ -1,7 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { buildCandles } from "./candles";
+import { buildCandles, extendCandlesForward } from "./candles";
+import type { Candle } from "./types";
 
 const MIN = 60_000;
+
+describe("extendCandlesForward", () => {
+  const base: Candle[] = [
+    { t: 0, open: 0.4, high: 0.5, low: 0.4, close: 0.45 },
+    { t: MIN, open: 0.45, high: 0.6, low: 0.45, close: 0.55 },
+  ];
+
+  it("returns the SAME reference when no new bucket is due", () => {
+    // cutoff still inside the last (t=MIN) bucket → nothing to add.
+    expect(extendCandlesForward(base, MIN + 30_000, MIN)).toBe(base);
+  });
+
+  it("appends flat doji candles up to the current bucket without mutating the input", () => {
+    const out = extendCandlesForward(base, 3 * MIN + 10, MIN);
+    expect(out).not.toBe(base);
+    expect(base).toHaveLength(2); // input untouched
+    expect(out.map((c) => c.t)).toEqual([0, MIN, 2 * MIN, 3 * MIN]);
+    // carried-forward close from the last real candle
+    expect(out[2]).toMatchObject({ open: 0.55, high: 0.55, low: 0.55, close: 0.55 });
+    expect(out[3].close).toBe(0.55);
+  });
+
+  it("returns the input for empty base or bad interval", () => {
+    expect(extendCandlesForward([], 1000, MIN)).toEqual([]);
+    expect(extendCandlesForward(base, 5 * MIN, 0)).toBe(base);
+  });
+});
 
 describe("buildCandles", () => {
   it("returns [] for empty input", () => {

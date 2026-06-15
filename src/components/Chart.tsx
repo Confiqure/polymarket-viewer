@@ -4,8 +4,8 @@ import {
   createChart,
   CrosshairMode,
   CandlestickSeries,
-  LineSeries,
   type ISeriesApi,
+  type IPriceLine,
   type CandlestickData,
   type UTCTimestamp,
   type IChartApi,
@@ -34,8 +34,8 @@ export function Chart({
   const chartRef = useRef<{
     chart: IChartApi;
     series: ISeriesApi<"Candlestick">;
-    midpointSeries: ISeriesApi<"Line">;
   } | null>(null);
+  const midpointLineRef = useRef<IPriceLine | null>(null);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -46,6 +46,9 @@ export function Chart({
   const prevSeriesStartRef = useRef<number | null>(null);
   const totalFromSecRef = useRef<number | null>(null);
   const totalToSecRef = useRef<number | null>(null);
+  // Tail-tracking for incremental updates: avoid re-ingesting the full dataset every tick.
+  const lastBarTimeRef = useRef<number | null>(null);
+  const prevLenRef = useRef(0);
 
   // Recompute whether we're in a fully zoomed-out (fit) state
   const recomputeZoomState = useCallback(() => {
@@ -143,16 +146,6 @@ export function Chart({
           borderVisible: false,
         }) as ISeriesApi<"Candlestick">;
 
-        // Add midpoint line series
-        const midpointSeries = cwa.addSeries(LineSeries, {
-          color: "#64748b", // slate-500
-          lineWidth: 1,
-          lineStyle: 2, // Dashed
-          crosshairMarkerVisible: false,
-          lastValueVisible: false,
-          priceLineVisible: false,
-        }) as ISeriesApi<"Line">;
-
         // Nudge view slightly so last candle isn't flush with edge
         chart.timeScale().applyOptions({ rightOffset: 5 });
 
@@ -166,13 +159,16 @@ export function Chart({
         };
         ts.subscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
 
-        chartRef.current = { chart, series, midpointSeries };
+        chartRef.current = { chart, series };
         return () => {
           try {
             ts.unsubscribeVisibleLogicalRangeChange(handleVisibleLogicalRangeChange);
           } catch {}
           chart.remove();
           chartRef.current = null;
+          midpointLineRef.current = null;
+          lastBarTimeRef.current = null;
+          prevLenRef.current = 0;
         };
       }
 
@@ -185,57 +181,85 @@ export function Chart({
     }
   }, [containerWidth, containerHeight, height, tvMode, recomputeZoomState]);
 
-  // Set data on changes
+  // Set data on changes. The candle array is rebuilt every ticker tick (~1 Hz), but on a live
+  // market only the last bar (and occasionally a freshly-opened bar) changes. So we feed the
+  // charting engine incrementally with series.update() for the tail and only fall back to a
+  // full setData() when the series itself changed (new market), shrank (longer delay), or on
+  // first paint. This avoids re-ingesting and repainting the entire history every second.
   useEffect(() => {
     if (!chartRef.current) return;
     try {
-      const { series, midpointSeries, chart } = chartRef.current;
-      const mapped: CandlestickData<UTCTimestamp>[] = candles.map((c: CandleType) => ({
+      const { series, chart } = chartRef.current;
+
+      // Midpoint is a single horizontal price line — no per-candle data, no per-tick updates.
+      if (showMidpoint && !midpointLineRef.current) {
+        midpointLineRef.current = series.createPriceLine({
+          price: 0.5,
+          color: "#64748b", // slate-500
+          lineWidth: 1,
+          lineStyle: 2, // Dashed
+          axisLabelVisible: false,
+        });
+      } else if (!showMidpoint && midpointLineRef.current) {
+        series.removePriceLine(midpointLineRef.current);
+        midpointLineRef.current = null;
+      }
+
+      if (candles.length === 0) return;
+
+      const toBar = (c: CandleType): CandlestickData<UTCTimestamp> => ({
         time: Math.floor(c.t / 1000) as UTCTimestamp,
         open: c.open,
         high: c.high,
         low: c.low,
         close: c.close,
-      }));
-      const data: CandlestickData<UTCTimestamp>[] = [];
-      let lastTime: number | null = null;
-      for (const d of mapped) {
-        const t = d.time as number;
-        if (lastTime !== null && t <= lastTime) continue;
-        data.push(d);
-        lastTime = t;
-      }
-      if (data.length === 0) return;
-      // Detect series change (first timestamp change) and reset the initial window flag
-      const firstTs = candles[0]?.t ?? null;
-      if (firstTs !== prevSeriesStartRef.current) {
+      });
+
+      // Detect series change (first timestamp change) and reset the initial-window flag.
+      const firstTs = candles[0].t;
+      const seriesChanged = firstTs !== prevSeriesStartRef.current;
+      if (seriesChanged) {
         prevSeriesStartRef.current = firstTs;
         appliedInitialWindowRef.current = false;
         userZoomedRef.current = false;
       }
 
-      series.setData(data);
+      const needFullReset = seriesChanged || lastBarTimeRef.current === null || candles.length < prevLenRef.current;
+      prevLenRef.current = candles.length;
 
-      // Update midpoint series
-      if (showMidpoint) {
-        const midpointData = data.map((d) => ({
-          time: d.time,
-          value: 0.5,
-        }));
-        midpointSeries.setData(midpointData);
+      if (needFullReset) {
+        const data: CandlestickData<UTCTimestamp>[] = [];
+        let lastTime: number | null = null;
+        for (const c of candles) {
+          const bar = toBar(c);
+          const t = bar.time as number;
+          if (lastTime !== null && t <= lastTime) continue;
+          data.push(bar);
+          lastTime = t;
+        }
+        if (data.length === 0) return;
+        series.setData(data);
+        totalFromSecRef.current = data[0].time as number;
+        lastBarTimeRef.current = data[data.length - 1].time as number;
+        totalToSecRef.current = lastBarTimeRef.current;
       } else {
-        midpointSeries.setData([]);
+        // Incremental: update the (possibly-changed) last bar and append any new bars.
+        const prevLast = lastBarTimeRef.current as number;
+        let newLast = prevLast;
+        for (const c of candles) {
+          const bar = toBar(c);
+          const t = bar.time as number;
+          if (t < prevLast) continue; // unchanged history — skip
+          series.update(bar); // same time → updates last bar; newer → appends
+          newLast = t;
+        }
+        lastBarTimeRef.current = newLast;
+        totalToSecRef.current = newLast;
       }
 
-      // Cache total bounds for stable comparisons
-      const firstSec = data[0].time as number;
-      const lastSec = data[data.length - 1].time as number;
-      totalFromSecRef.current = firstSec;
-      totalToSecRef.current = lastSec;
-
-      // Apply initial 4-hour view once when data arrives, unless user already interacted or we already applied
+      // Apply initial 4-hour view once when data arrives, unless the user already interacted.
       if (!appliedInitialWindowRef.current && !userZoomedRef.current) {
-        const lastSec = data[data.length - 1].time as number;
+        const lastSec = lastBarTimeRef.current as number;
         const fourHours = 4 * 60 * 60;
         programmaticRangeChangeRef.current = true;
         try {
@@ -249,10 +273,8 @@ export function Chart({
             recomputeZoomState();
           }, 0);
         }
-      } else {
-        if (userZoomedRef.current || appliedInitialWindowRef.current) {
-          recomputeZoomState();
-        }
+      } else if (userZoomedRef.current || appliedInitialWindowRef.current) {
+        recomputeZoomState();
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Chart data error";

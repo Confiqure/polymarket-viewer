@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { TimeSeries, lerpAt } from "./buffer";
+import { TimeSeries, countAtOrBefore, lerpAt } from "./buffer";
+
+describe("countAtOrBefore", () => {
+  const pts = [10, 20, 30, 40, 50].map((t) => ({ t, p: 0.5 }));
+
+  it("counts points at or before ts (inclusive)", () => {
+    expect(countAtOrBefore(pts, 30)).toBe(3);
+    expect(countAtOrBefore(pts, 35)).toBe(3);
+    expect(countAtOrBefore(pts, 50)).toBe(5);
+  });
+
+  it("handles out-of-range and empty inputs", () => {
+    expect(countAtOrBefore(pts, 5)).toBe(0);
+    expect(countAtOrBefore(pts, 999)).toBe(5);
+    expect(countAtOrBefore([], 10)).toBe(0);
+  });
+});
 
 describe("TimeSeries.push", () => {
   it("appends in order", () => {

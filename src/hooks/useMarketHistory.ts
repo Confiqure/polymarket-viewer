@@ -30,15 +30,24 @@ export function useMarketHistory(market: MarketRef | null) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastFetchRef = useRef<number>(0);
-  const latestMarketRef = useRef(market);
+
+  // Key history on the token pair, NOT the `market` object reference. Event pages rebuild a
+  // fresh MarketRef on every 30s price-snapshot poll even though the tokens are unchanged;
+  // keying on the object would wipe + refetch the chart each time (a visible flicker). History
+  // is uniquely identified by tokenId, so we only refetch when a token actually changes.
+  const yesTokenId = market?.yesTokenId;
+  const noTokenId = market?.noTokenId;
+  const tokenKey = yesTokenId && noTokenId ? `${yesTokenId}|${noTokenId}` : "";
+  const latestTokenKeyRef = useRef(tokenKey);
 
   useEffect(() => {
-    latestMarketRef.current = market;
-  }, [market]);
+    latestTokenKeyRef.current = tokenKey;
+  }, [tokenKey]);
 
   const fetchHistoryData = useCallback(
     async (isRefresh = false) => {
-      if (!market) return;
+      if (!yesTokenId || !noTokenId) return;
+      const requestKey = `${yesTokenId}|${noTokenId}`;
 
       if (!isRefresh) {
         setBackfillYes([]);
@@ -48,11 +57,10 @@ export function useMarketHistory(market: MarketRef | null) {
       try {
         setLoading(true);
         setError(null);
-        const yesId = market.yesTokenId;
-        const noId = market.noTokenId;
-        const [yesRes, noRes] = await Promise.allSettled([fetchHistory(yesId, "1"), fetchHistory(noId, "1")]);
+        const [yesRes, noRes] = await Promise.allSettled([fetchHistory(yesTokenId, "1"), fetchHistory(noTokenId, "1")]);
 
-        if (market !== latestMarketRef.current) return;
+        // Stale-resolve guard: drop results if the active token pair changed mid-flight.
+        if (requestKey !== latestTokenKeyRef.current) return;
 
         if (yesRes.status === "fulfilled") {
           setBackfillYes(yesRes.value.map((h) => ({ t: h.t * 1000, p: h.p })));
@@ -71,17 +79,17 @@ export function useMarketHistory(market: MarketRef | null) {
 
         lastFetchRef.current = Date.now();
       } catch {
-        if (market !== latestMarketRef.current) return;
+        if (requestKey !== latestTokenKeyRef.current) return;
         if (!isRefresh) {
           setBackfillYes([]);
           setBackfillNo([]);
         }
         setError("Couldn't load price history");
       } finally {
-        if (market === latestMarketRef.current) setLoading(false);
+        if (requestKey === latestTokenKeyRef.current) setLoading(false);
       }
     },
-    [market],
+    [yesTokenId, noTokenId],
   );
 
   useEffect(() => {

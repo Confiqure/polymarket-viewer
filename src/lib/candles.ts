@@ -63,3 +63,27 @@ export function buildCandles(points: PricePoint[], intervalMs: number, opts?: { 
   }
   return filled;
 }
+
+/**
+ * Extend a candle list forward with synthetic flat (doji) candles carrying the last close, up
+ * to the bucket containing `cutoffTs`. Keeps the chart's right edge advancing during gaps.
+ * Returns the SAME array reference when no extension is needed, so callers can short-circuit
+ * downstream work on quiet ticks. Pure; does not mutate the input.
+ */
+export function extendCandlesForward(base: Candle[], cutoffTs: number, intervalMs: number): Candle[] {
+  if (base.length === 0 || !intervalMs || intervalMs <= 0) return base;
+  const currentBucketStart = Math.floor(cutoffTs / intervalMs) * intervalMs;
+  const last = base[base.length - 1];
+  if (last.t >= currentBucketStart) return base;
+  const out = [...base];
+  let prev = out[out.length - 1];
+  let t = prev.t + intervalMs;
+  while (t <= currentBucketStart) {
+    const price = prev.close;
+    const c: Candle = { t, open: price, high: price, low: price, close: price };
+    out.push(c);
+    prev = c;
+    t += intervalMs;
+  }
+  return out;
+}

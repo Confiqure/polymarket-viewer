@@ -93,6 +93,18 @@ export class TimeSeries {
   }
 }
 
+/** Count of points in a time-ascending array with t <= ts (binary search, O(log n)). */
+export function countAtOrBefore(sorted: PricePoint[], ts: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid].t <= ts) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export function lerpAt(series: TimeSeries, ts: number): PricePoint | undefined {
   const arr = series.toArray();
   if (arr.length === 0) return undefined;
