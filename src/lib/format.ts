@@ -45,6 +45,16 @@ export function formatProbability(p?: number | null): string {
   return `${Math.round(p * 100)}%`;
 }
 
+/** Compact relative time ("12s ago" / "5m ago" / "2h ago") from a past epoch-ms timestamp. */
+export function timeAgo(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return `${h}h ago`;
+}
+
 /** Format a USD volume like 1.2M / 1.2K / 12. Returns "—" for missing or non-positive. */
 export function formatVolumeUsd(v?: number | null): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return "—";

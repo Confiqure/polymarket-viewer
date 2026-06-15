@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { MarketOption } from "@/lib/types";
-import { formatProbability, formatVolumeUsd } from "@/lib/format";
+import { formatProbability, formatVolumeUsd, timeAgo } from "@/lib/format";
 
 function OptionAvatar({ option, size = 28 }: { option: MarketOption; size?: number }) {
   const src = option.image ?? option.icon;
@@ -223,15 +223,6 @@ export function EventOptionPicker({
       )}
     </div>
   );
-}
-
-function timeAgo(ts: number): string {
-  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  return `${h}h ago`;
 }
 
 export default EventOptionPicker;
