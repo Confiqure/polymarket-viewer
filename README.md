@@ -10,8 +10,8 @@ Polymarket’s native UI is great for trading, but not ideal for passive monitor
 
 - A clean fullscreen / TV mode with large probability readout
 - Selectable delay window (latency / anti-spoiler / fair display buffer)
-- Adjustable candlestick timeframe (1m / 5m / 15m / 60m)
-- Outcome POV toggle (YES / NO)
+- Adjustable candlestick timeframe (1m–60m)
+- Outcome POV toggle (YES / NO), or a tri-state Home/Draw/Away view for matches that can draw
 - Auto screen wake (TV mode) so displays don’t sleep
 - URL parameter sync & deep-linking (share a specific configuration)
 
@@ -19,14 +19,15 @@ It’s designed for: stream overlays, venue displays, dashboards, and personal m
 
 ## Core Features
 
-| Feature         | Notes                                                             |
-| --------------- | ----------------------------------------------------------------- |
-| Realtime prices | REST polling with WebSocket planned                               |
-| Delayed view    | Client-side buffer to avoid spoilers during live events           |
-| Candles         | Built from point-in-time price snapshots (aggregated client-side) |
-| Deep links      | `?url=...&delay=30&tf=5&pov=yes&mode=tv` style sharing            |
-| TV Mode         | Enlarged probability, auto wake lock, minimal chrome              |
-| Resilient       | Graceful degradation if WS fails (no hard crash)                  |
+| Feature           | Notes                                                                |
+| ----------------- | -------------------------------------------------------------------- |
+| Realtime prices   | REST polling with WebSocket planned                                  |
+| Delayed view      | Client-side buffer to avoid spoilers during live events              |
+| Candles           | Built from point-in-time price snapshots (aggregated client-side)    |
+| Events & matchups | Multi-outcome events plus a tri-state Home/Draw/Away view for soccer |
+| Deep links        | `?url=...&delay=30&tf=5&pov=yes&mode=tv` style sharing               |
+| TV Mode           | Enlarged probability, auto wake lock, minimal chrome                 |
+| Resilient         | Graceful degradation if a price poll fails (no hard crash)           |
 
 ## Data Flow Overview
 
@@ -59,13 +60,17 @@ Paste a Polymarket market or event URL (e.g. `https://polymarket.com/event/...`)
 
 ## URL Parameters
 
-| Param   | Example                                 | Description                                                    |
-| ------- | --------------------------------------- | -------------------------------------------------------------- |
-| `url`   | `?url=https://polymarket.com/event/...` | Market/event link to auto-resolve                              |
-| `delay` | `delay=30`                              | Seconds of display delay (0–600)                               |
-| `tf`    | `tf=5`                                  | Candle timeframe in minutes (1, 2, 3, 4, 5, 7, 10, 15, 30, 60) |
-| `pov`   | `pov=yes`                               | Outcome perspective (`yes` or `no`)                            |
-| `mode`  | `mode=tv`                               | TV mode (large probability, wake lock)                         |
+| Param     | Example                                 | Description                                                    |
+| --------- | --------------------------------------- | -------------------------------------------------------------- |
+| `url`     | `?url=https://polymarket.com/event/...` | Market/event link to auto-resolve                              |
+| `delay`   | `delay=30`                              | Seconds of display delay (0–600)                               |
+| `tf`      | `tf=5`                                  | Candle timeframe in minutes (1, 2, 3, 4, 5, 7, 10, 15, 30, 60) |
+| `pov`     | `pov=yes`                               | Outcome perspective (`yes` or `no`); ignored for matchups      |
+| `option`  | `option=draw`                           | Selected outcome id for a multi-outcome event                  |
+| `display` | `display=moneyline`                     | Odds format (`percent` or `moneyline`)                         |
+| `mid`     | `mid=0`                                 | Hide the 50% midpoint line (shown by default)                  |
+| `split`   | `split=67`                              | TV-mode odds/chart vertical split (20–80)                      |
+| `mode`    | `mode=tv`                               | TV mode (large probability, wake lock)                         |
 
 Examples:
 
