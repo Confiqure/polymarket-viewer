@@ -64,7 +64,7 @@ export default function TrendingEvents({ onPick }: { onPick: (url: string) => vo
     <section className="mt-6">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold tracking-wide text-slate-200 uppercase">Trending</h2>
-        <span className="text-xs text-neutral-500">Top 10 by 24h volume</span>
+        <span className="text-xs text-neutral-500">Top 10 by 24h activity</span>
       </div>
       <ul className="divide-y divide-neutral-800 overflow-hidden rounded-xl bg-neutral-900/60 ring-1 ring-neutral-800">
         {events == null
