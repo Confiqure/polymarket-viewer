@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -13,6 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 const SITE_URL = "https://polymarket.dylanwheeler.net";
+
+
+// Self-hosted Umami (analytics.dylanwheeler.net). Both env vars are injected by
+// AWS Amplify (Terraform: monorepo workspace/infrastructure/amplify/apps.tf); the
+// script only renders when the website ID is set, so local dev never emits events.
+const umamiHost = process.env.NEXT_PUBLIC_UMAMI_HOST ?? "https://analytics.dylanwheeler.net";
+const umamiWebsiteId = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID ?? "";
 
 export const metadata: Metadata = {
   title: {
@@ -42,7 +50,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {umamiWebsiteId && (
+          <Script
+            defer
+            data-website-id={umamiWebsiteId}
+            src={`${umamiHost}/script.js`}
+          />
+        )}
+        {children}
+      </body>
     </html>
   );
 }
