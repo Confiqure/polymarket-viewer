@@ -15,7 +15,6 @@ const geistMono = Geist_Mono({
 
 const SITE_URL = "https://polymarket.dylanwheeler.net";
 
-
 // Self-hosted Umami (analytics.dylanwheeler.net). Both env vars are injected by
 // AWS Amplify (Terraform: monorepo workspace/infrastructure/amplify/apps.tf); the
 // script only renders when the website ID is set, so local dev never emits events.
@@ -51,13 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {umamiWebsiteId && (
-          <Script
-            defer
-            data-website-id={umamiWebsiteId}
-            src={`${umamiHost}/script.js`}
-          />
-        )}
+        {umamiWebsiteId && <Script defer data-website-id={umamiWebsiteId} src={`${umamiHost}/script.js`} />}
         {children}
       </body>
     </html>
